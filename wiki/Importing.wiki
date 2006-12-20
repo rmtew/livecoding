@@ -5,7 +5,7 @@ mapped to the import namespace.
 
 These examples should illustrate how this works in practice.
 
-==== Example 1: One file in a subdirectory ====
+=== Example 1: One file in a subdirectory ===
 
 *Note:* Modules become available for importing through directory contents
 being registered with this library.  And how the contents of those directories
@@ -44,7 +44,7 @@ Then it is now possible to do the following:
   from server.services import NetService
 }}}
 
-= Example 2: Two files in a subdirectory =
+=== Example 2: Two files in a subdirectory ===
 
 *Note:* Modules directly map to directory structure which means that the
 contents of all python scripts within a given directory are placed in the
@@ -80,7 +80,7 @@ is possible to do the following:
   from server.services import DataService
 }}}
 
-= Example 3: Directory contents can be merged into a namespace =
+=== Example 3: Directory contents can be merged into a namespace ===
 
 *Note:* By registering two directories under the same base namespace
 the contents get merged into the corresponding modules which are created.
