@@ -1,16 +1,4 @@
 #labels Featured
-= Live coding in Python =
-
-This library is licensed under the BSD license, which is distributed with
-it and can be found in the same directory as the file 'LICENSE'.
-
-== Authors / Contact information ==
-
- * Michael Brannan
- * Richard Tew <richard.m.tew@gmail.com>
-
-== Introduction ==
-
 This library provides live coding support.
 
 Directories containing Python scripts can be registered to be monitored
