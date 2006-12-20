@@ -136,12 +136,7 @@ And it is still possible to do the following:
 
 == Potential problems ==
 
- * If someone were to add a directory under a standard library namespace
-   then it might merge the contents of the directory into that existing
-   namespace.  But is it really practical to prevent it given that it can
-   work the other way round - where the standard library module might be
-   inaccessible because the one provided through this library was imported
-   first.
+ * If someone were to add a directory under a standard library namespace then it might merge the contents of the directory into that existing namespace.  But is it really practical to prevent it given that it can work the other way round - where the standard library module might be inaccessible because the one provided through this library was imported first.
 
 == Todo ==
 
