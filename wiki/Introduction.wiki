@@ -61,7 +61,6 @@ You might register the contents of the 'stuff' directory under the base
 namespace 'server' in this manner:
 
 {{{
-#!python
   import livecoding
   livecoding.AddDirectory("stuff", "server")
 }}}
@@ -73,7 +72,6 @@ in this submodule.
 Then it is now possible to do the following:
 
 {{{
-#!python
   import server
   from server import services
   from server.services import NetService
@@ -109,7 +107,6 @@ Now registering the directory in the same manner as the first example, it
 is possible to do the following: 
 
 {{{
-#!python
   import server
   from server import services
   from server.services import NetService
@@ -139,7 +136,6 @@ These files provide the same classes as in the previous example.  Next both
 'stuff1' and 'stuff2' are registered under the same base namespace:
 
 {{{
-#!python
   import livecoding
   livecoding.AddDirectory("stuff1", "server")
   livecoding.AddDirectory("stuff2", "server")
@@ -148,7 +144,6 @@ These files provide the same classes as in the previous example.  Next both
 And it is still possible to do the following:
 
 {{{
-#!python
   from server.services import NetService
   from server.services import DataService
 }}}
