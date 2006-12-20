@@ -1,6 +1,4 @@
-#summary Introduction to this project.
 #labels Featured
-
 = Live coding in Python =
 
 This library is licensed under the BSD license, which is distributed with
