@@ -7,7 +7,7 @@ These examples should illustrate how this works in practice.
 
 = Example 1: One file in a subdirectory =
 
-'''Note:''' Modules become available for importing through directory contents
+*Note:* Modules become available for importing through directory contents
 being registered with this library.  And how the contents of those directories
 are made available for importing differs from the standard Python module way.
 
@@ -46,7 +46,7 @@ Then it is now possible to do the following:
 
 = Example 2: Two files in a subdirectory =
 
-'''Note:''' Modules directly map to directory structure which means that the
+*Note:* Modules directly map to directory structure which means that the
 contents of all python scripts within a given directory are placed in the
 module for that directory.
 
@@ -82,7 +82,7 @@ is possible to do the following:
 
 = Example 3: Directory contents can be merged into a namespace =
 
-'''Note:''' By registering two directories under the same base namespace
+*Note:* By registering two directories under the same base namespace
 the contents get merged into the corresponding modules which are created.
 
 Let's say you have a directory 'stuff1' and the following subdirectory and
