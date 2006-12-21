@@ -1,6 +1,12 @@
 #
 # Do some generic stuff to wrap whatever method is chosen.
 #
+# To do list:
+#
+# - Detect if stackless is present and use that instead of a thread.  This
+#   of course requires that the user is running the scheduler, but that is
+#   their problem.
+#
 
 import os, time
 import threading, Queue
