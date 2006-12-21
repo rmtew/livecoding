@@ -1,9 +1,12 @@
 """
-This script is publically available from the web page given below.  It is not
-part of the live coding package but is included for the sake of completeness.
+The original version of this script is publically available from the web page
+given below.  It has been modified to suit the needs of the livecoding
+library.
 
 Author: Tim Golden
 Source: http://tgolden.sc.sabren.com/python/win32_how_do_i/watch_directory_for_changes.html
+
+From recipe page:
 
 The third technique uses the MS ReadDirectoryChanges API, exposed via the
 pywin32 win32file module. The way we employ it here is to use call
@@ -16,6 +19,13 @@ compound actions may also give a list.
 
 Obviously, you could get fancy with a micro state machine to give better
 output on renames and other multiple actions.
+
+To do list:
+
+- Make this actually usable.  Because the ReadDirectoryChanges call is done
+  in a blocking way, this means it will wait for an event on one directory
+  we are watching before it can move onto one of the other directories. It
+  needs to call ReadDirectoryChanges asynchronously via overlapped thingies.
 """
 
 import os
