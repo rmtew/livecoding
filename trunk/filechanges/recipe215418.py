@@ -30,7 +30,11 @@ move it into the submission directory.
 
 import os, time
 
-def watch_directories (paths, func, delay=1.0):
+def Prepare(handler):
+    handler.watchState = {}
+    Check(handler, skipEvents=True)
+
+def Check(handler, delay=1.0, skipEvents=False):
     """(paths:[str], func:callable, delay:float)
     Continuously monitors the paths and their subdirectories
     for changes.  If any files or directories are modified,
@@ -47,8 +51,7 @@ def watch_directories (paths, func, delay=1.0):
     # tree rooted at 'path', doing a stat() on each file and comparing
     # the modification time.  
 
-    all_files = {}
-    def f (unused, dirname, files):
+    def f (handler, dirname, files):
         # Traversal function for directories
         for filename in files:
             path = os.path.join(dirname, filename)
@@ -67,28 +70,21 @@ def watch_directories (paths, func, delay=1.0):
                 # Record this file as having been seen
                 del remaining_files[path]
                 # File's mtime has been changed since we last looked at it.
-                if t.st_mtime > mtime:
-                    changed_list.append(path)
-            else:
+                if not skipEvents and t.st_mtime > mtime:
+                    handler.ProcessFileChange(path)
+            elif not skipEvents:
                 # No recorded modification time, so it must be
                 # a brand new file.
-                changed_list.append(path)
+                handler.ProcessFileAddition(path)
 
             # Record current mtime of file.
-            all_files[path] = t.st_mtime
+            handler.watchState[path] = t.st_mtime
 
-    # Main loop
-    rescan = False
-    while True:
-        changed_list = []
-        remaining_files = all_files.copy()
-        all_files = {}
-        for path in paths:
-            os.path.walk(path, f, None)
-        removed_list = remaining_files.keys()
-        if rescan:
-            rescan = False
-        elif changed_list or removed_list:
-            rescan = func(changed_list, removed_list)
-
-        time.sleep(delay)
+    changed_list = []
+    remaining_files = handler.watchState.copy()
+    handler.watchState = {}
+    for path in handler.directories:
+        os.path.walk(path, f, handler)
+    if not skipEvents:
+        for path in remaining_files.keys():
+            handler.ProcessFileDeletion(path)
