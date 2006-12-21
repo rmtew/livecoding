@@ -51,20 +51,20 @@ class ChangeThread(threading.Thread):
         #if os.name == "nt":
         #    if IsModuleAvailable("win32file"):
         #        import golden3
-        #        module = golden3.watch_directories        
+        #        module = golden3        
         if module is None:
             import recipe215418
-            module = recipe215418.watch_directories
+            module = recipe215418
         module.Prepare(self.handler)
 
-        while len(handler.directories):
+        while len(self.handler.directories):
             module.Check(self.handler)
             time.sleep(1)
 
 if __name__ == "__main__":
     path = r"C:\devkitPro\dl\livecoding\livecoding-google\trunk\filechanges"
     def f(path, added=False, changed=False, deleted=False):
-        print "f", path, (added, changed, deleted)
+        print "f", path, (added, changed, deleted) 
     ch = ChangeHandler(f)
     ch.AddDirectory(path)
 
