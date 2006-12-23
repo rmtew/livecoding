@@ -39,14 +39,24 @@ after several years of using another arbitrary one in our day to day work.
    inaccessible because the one provided through this library was imported
    first.
 
+ * There may be things which depend on the __file__ value only ever being
+   one file path.  This is not correct for the way this module does
+   namespacing and .. well, I don't know at this time.
+
+ * Threading issues.  What if the main thread is doing something like
+   instancing a class when a change is detected?  Personally, this is
+   not something I will ever encounter, if I use this and it has
+   Stackless support.
+
 == Todo ==
 
- * Some code to detect changed files.
+ * When a module has entries from multiple files combined into it, there
+   needs to be some simple way to indicate this in the __file__ value.
 
 """
 
 import os
-import marshal
+# import marshal 
 import __builtin__
 import traceback
 import sys
@@ -54,6 +64,7 @@ import types
 import imp
 import new
 import random
+import StringIO
 
 CCSTATE_FAILED      = 0
 CCSTATE_INITIALIZED = 1
@@ -66,33 +77,27 @@ CCMODE_NORMAL       = 0
 CCMODE_VERBOSE      = 1
 
 class CompiledFile:
-    def __init__(self, filePath = None, realFilePath = None, namespace=None):
+    def __init__(self, filePath = None, namespace=None):
         self.namespace = namespace
         self.filePath = filePath
-        if realFilePath is None:
-            self.realFilePath = filePath
-        else:
-            self.realFilePath = realFilePath
         self.codeObject = None
         self.timeStamp = None
         self.locals = {
             "__file__": filePath,
         }
+        self.exports = None
         if file is not None:
             return self.Compile()
 
     def Compile(self):
-        if self.realFilePath != self.filePath:
-            sys.stdout.write("Compiling file: %s (actually %s)\n"%(self.filePath, self.realFilePath))
-        else:
-            sys.stdout.write("Compiling file: %s\n"%(self.filePath))
+        sys.stdout.write("Compiling file: %s\n"%(self.filePath))
 
-        f = open(self.realFilePath)
+        f = open(self.filePath)
         try:
             self.timeStamp = os.fstat(f.fileno())
         except AttributeError:
             sys.exc_clear()
-            self.timeStamp = os.stat(self.realFilePath)
+            self.timeStamp = os.stat(self.filePath)
 
         codestring = f.read()
         f.close()
@@ -104,10 +109,7 @@ class CompiledFile:
         try:
             self.codeObject = __builtin__.compile(codestring, self.filePath, "exec")
         except SyntaxError, e:
-            if self.realFilePath != self.filePath:
-                sys.stderr.write("Compilation failed: %s (actually %s)\n"%(self.filePath, self.realFilePath))
-            else:
-                sys.stderr.write("Compilation failed: %s\n"%(self.filePath))
+            sys.stderr.write("Compilation failed: %s\n"%(self.filePath))
             lines = traceback.format_exception_only(SyntaxError, e)
             for line in lines:
                 sys.stderr.write(line.replace('File "<string>"', 'File %s'%(self.filePath)))
@@ -121,30 +123,36 @@ class CompiledFile:
         eval(self.codeObject, self.locals)
 
     def GetExports(self):
-        exports = {}
-        for k, v in self.locals.iteritems():
-            if k in ("__builtins__", "__file__"):
-                continue
-
-            if hasattr(v, "__module__"):
-                # New classes and new functions respectively.  These will get
-                # a module set when these exports are put in place.
-                if v.__module__ is None or v.__module__ == "__builtin__":
-                    exports[k] = v
-            #else:
-            #    print "-- UNKNOWN", type(v), k, v, v.__module__, v.__dict__.keys()
-        return exports
+        # We cache this because after what it has within it has been processed, it
+        # will no longer be detectable as exported (as it will have been claimed..
+        # __module__ set).
+        if self.exports is None:
+            exports = {}
+            for k, v in self.locals.iteritems():
+                if k in ("__builtins__", "__file__"):
+                    continue
+    
+                if hasattr(v, "__module__"):
+                    # New classes and new functions respectively.  These will get
+                    # a module set when these exports are put in place.
+                    if v.__module__ is None or v.__module__ == "__builtin__":
+                        exports[k] = v
+                #else:
+                #    print "-- UNKNOWN", type(v), k, v, v.__module__, v.__dict__.keys()
+            self.exports = exports
+        return self.exports
 
 
 class CodeCompiler:
-    def __init__(self):
+    def __init__(self, detectChanges=False):
         CodeCompiler.state = CCSTATE_INITIALIZED
         CodeCompiler.mode = CCMODE_VERBOSE
 
         self.compiledFiles = {}
         self.bootStrapOrder = []
 
-        self.directories = {}
+        self.directoriesAll = {}
+        self.directoriesTop = {}
         self.namespaces = {}
         self.overrides = {}
 
@@ -153,22 +161,32 @@ class CodeCompiler:
         # Import hook state.
         self.__import__ = None
         self.lastImport = None
+        
+        # Internal file change monitoring.
+        self.internalFileMonitoring = detectChanges
+        if detectChanges:
+            import filechanges
+            self.internalFileMonitor = filechanges.ChangeHandler(self.ProcessChangedFile)
 
     # ------------------------------------------------------------------------
-    def AddDirectory(self, path, ns, monitor=False):
+    def AddDirectory(self, path, ns):
         CodeCompiler.state = CCSTATE_BUILDING
         try:
             fileList = self.ProcessDirectory(path, ns)
+            self.directoriesTop[path] = ns
             self.CompileFiles(path, fileList)
+
+            if self.internalFileMonitoring:
+                self.internalFileMonitor.AddDirectory(path)
         except:
             CodeCompiler.state = CCSTATE_FAILED
             raise
 
     def ProcessDirectory(self, path, ns, files=None):
-        if path in self.directories:
+        if path in self.directoriesAll:
             raise RuntimeError("Path already added", path)
 
-        self.directories[path] = None
+        self.directoriesAll[path] = None
 
         if files is None:
             files = {}
@@ -190,7 +208,7 @@ class CodeCompiler:
     # It is unnecessary to override the built-in import function in order to
     # put our namespace in place.  However, we can use it to find out what
     # action exactly failed.  Something which ImportError is unable to tell
-    # us to a useful extent.
+    # us directly to a useful extent.
 
     def AddImportHook(self):
         if self.__import__:
@@ -292,9 +310,14 @@ class CodeCompiler:
         namespace = compiledFile.namespace
         exports = compiledFile.GetExports()
         for name, objectRef in exports.iteritems():
-            self.InsertNamespaceEntry(filePath, namespace, name, objectRef)
+            self.UpdateNamespaceEntry(filePath, namespace, name, None, objectRef)
 
-    def InsertNamespaceEntry(self, filePath, name_space, object_name, objectRef):
+    def UpdateNamespaceEntry(self, filePath, name_space, object_name, oldValue, newValue=None):
+        if newValue is None:
+            if CodeCompiler.mode == CCMODE_VERBOSE:
+                print "File '%s' with namespace '%s' had entry '%s' removed." % (filePath, name_space, object_name)
+            return False
+    
         lastModule = None
         currentNamespace = ""
         for namePart in name_space.split("."):
@@ -334,12 +357,14 @@ class CodeCompiler:
                 moduleFile += "|"
             moduleFile += relFilePath
 
-        module.__dict__.update({ object_name: objectRef, "__file__": moduleFile })
+        module.__dict__.update({ object_name: newValue, "__file__": moduleFile })
         all = module.__dict__.get("__all__", [])
         if object_name not in all:
             all.append(object_name)
-        if hasattr(objectRef, "__module__"):
-            objectRef.__module__ = name_space or module.__name__
+        if hasattr(newValue, "__module__"):
+            newValue.__module__ = name_space or module.__name__
+
+        return True
 
     # ------------------------------------------------------------------------
     def OverrideClassFunction(self, moduleNamespace, className, attributeName, value):
@@ -423,21 +448,16 @@ class CodeCompiler:
                 self.InjectOverrides(moduleNamespace, className, attributeName)
 
     # ------------------------------------------------------------------------
-    def ProcessChangedFile(self, filePath, realFilePath=None):
+    def ProcessChangedFile(self, filePath, added=False, changed=False, deleted=False):
         """
         This can be called manually if the automatic file change detection is
         not installed.  Your code base might be handling this already at a
         higher level, or something similar.
-        """
-    
+        """    
         sys.stdout.write("Processing changed file: %s\n"%(filePath))
 
-        oldCompiledFile = None
-        oldLocals = {}
-        oldExports = {}
-        newCompiledFile = None
-        newLocals = {}
-        newExports = {}
+        oldCompiledFile, oldLocals, oldExports = None, {}, {}
+        newCompiledFile, newLocals, newExports = None, {}, {}
 
         if self.compiledFiles.has_key(filePath):
             if CodeCompiler.mode == CCMODE_VERBOSE:
@@ -445,12 +465,18 @@ class CodeCompiler:
             oldCompiledFile = self.compiledFiles[filePath]
             oldLocals = oldCompiledFile.locals
             oldExports = oldCompiledFile.GetExports()
+            namespace = oldCompiledFile.namespace
+        else:
+            # Not supporting addition of new files at this time.  The reason for this
+            # is that sometimes when I start this with the automatic change monitoring
+            # it detects a file addition where there is none.
+            raise NotImplementedError("need to generate the namespace", filePath)
 
-        newCompiledFile = CompiledFile(filePath, realFilePath)
+        newCompiledFile = CompiledFile(filePath, namespace)
         if newCompiledFile.timeStamp is None and newCompiledFile.codeObject is None:
             return
         try:
-            newCompiledFile.Actualize()
+            newCompiledFile.Actualize(filePath)
         except ImportError, e:
             sys.stderr.write("ImportError in %s\n"%(filePath))
             lines = traceback.format_exception_only(ImportError, e)
@@ -467,6 +493,7 @@ class CodeCompiler:
         newLocals = newCompiledFile.locals
         newExports = newCompiledFile.GetExports()
 
+        # Exports are of course those things put into the importable modules.
         changeExports = {}
         for key, val in newExports.iteritems():
             changeExports[key] = [None, val]
@@ -476,6 +503,7 @@ class CodeCompiler:
             else:
                 changeExports[key] = [val, None]
 
+        # Locals are the things in the scope of each compiled file.
         changeLocals = {}
         for key, val in newLocals.iteritems():
             changeLocals[key] = [None, val]
@@ -493,6 +521,7 @@ class CodeCompiler:
                 # may depend on the presence of this entry.
                 ## del oldLocals[objectName]
                 continue
+
             if type(newObject) not in (types.ClassType, types.TypeType):
                 # Cack imported from somewhere else?
                 if oldObject and type(oldObject) is type(newObject):
@@ -512,23 +541,27 @@ class CodeCompiler:
 
                 oldLocals[objectName] = newObject
                 continue
+
             if oldObject:
                 toDelAttr = []
                 for k, oldV in oldObject.__dict__.iteritems():
                     if not newObject.__dict__.has_key(k):
                         toDelAttr.append(k)
-                if CodeCompiler.mode == CCMODE_VERBOSE:
-                    print "removing:",toDelAttr
-                for k in toDelAttr:
-                    del oldObject[k]
+                if len(toDelAttr):
+                    if CodeCompiler.mode == CCMODE_VERBOSE:
+                        print "removing:",toDelAttr
+                    for k in toDelAttr:
+                        del oldObject[k]
+
             # Go over the entries in the newly (re)loaded file locals.
             for k, v in newObject.__dict__.iteritems():
+                if k in ["__dict__","__doc__","__module__","__weakref__"]:
+                    continue
+
                 if CodeCompiler.mode == CCMODE_VERBOSE:
                     print "(NEW)TYPE k:", k,"is:", type(v)
                     if oldObject and k in oldObject.__dict__:
                         print "(OLD)TYPE k:", k,"is:", type(oldObject.__dict__[k])
-                if k in ["__dict__","__doc__","__module__","__weakref__"]:
-                    continue
 
                 targetObject = oldObject and oldObject or newObject
                 if isinstance(v, (types.UnboundMethodType, types.FunctionType, types.MethodType)):
@@ -550,33 +583,70 @@ class CodeCompiler:
                     setattr(oldObject, k, v)
 
         if CodeCompiler.mode == CCMODE_VERBOSE:
-            print "change (newObject):"
+            st = StringIO.StringIO()
             for k, v in newObject.__dict__.iteritems():
-                if k == "__builtins__":
+                if k in ("__builtins__", "__doc__", "__module__"):
                     continue
-                print k, ":", v
-            print "change (oldObject):"
-            for k, v in oldObject.__dict__.iteritems():
-                if k == "__builtins__":
-                    continue
-                print k, ":", v
+                st.writeline("%s : %s" % (k, v))
+            if st.len:
+                sys.stdout.writeline("change (newObject):")
+                st.seek(0, 0)
+                sys.stdout.write(st.getvalue())
+
+            if oldObject is not None:
+                st = StringIO.StringIO()
+                for k, v in oldObject.__dict__.iteritems():
+                    if k in ("__builtins__", "__doc__", "__module__"):
+                        continue
+                    st.writeline("%s : %s" % (k, v))
+                if st.len:
+                    sys.stdout.writeline("change (oldObject):")
+                    st.seek(0, 0)
+                    sys.stdout.write(st.getvalue())
 
         if CodeCompiler.mode == CCMODE_VERBOSE:
-            print "Change Exports:"
+            print "Change Exports:", changeExports
+            print "Old Exports:", oldExports
+            print "New Exports:", newExports
 
-        for guid, change in changeExports.iteritems():
+        for objectName, change in changeExports.iteritems():
             if CodeCompiler.mode == CCMODE_VERBOSE:
-                print "GUID:",guid, "change:",change
-                print type(change[0]), type(change[1])
+                print "NAME:",objectName, "change:",change, type(change[0]), type(change[1])
             oldObjectRef, newObjectRef = change
 
-            if type(change[0]) is type(change[1]):
+            if oldObjectRef is None:
+                print "Adding '%s'" % objectName
+            elif type(oldObjectRef) is type(newObjectRef):
                 # This fixes that bug where you derive a class from another
                 # and then update the base class.
                 # It might be an idea to check that __name__ is the same as well.
                 if CodeCompiler.mode == CCMODE_VERBOSE:
-                    print "Not updating %s as its type has not changed"
+                    print "Not updating %s as its type has not changed" % objectName
                 continue
+
+            self.UpdateNamespaceEntry(filePath, namespace, objectName, oldObjectRef, newObjectRef)
+
+    def GetRelativePath(self, filePath):
+        for dirPath in self.directoriesTop.iterkeys():
+            if filePath.startswith(dirPath):
+                idx = filePath.rfind(os.path.sep, 0, len(dirPath)-1)
+                # Include the leading subdirectory name as context.
+                if idx != -1:
+                    return filePath[idx+1:]
+                # There is no leading subdirectory (!) so use the full path.
+                break
+        return filePath
+
+"""
+    This is the old code for ProcessChangedFile which added or removed an
+    entry from a namespace.  Given it is replaced by the more developed
+    and more correct UpdateNamespaceEntry, there is still a reason I have
+    left it here.  Which is to remind me that it handles removal of entries
+    where Update.. does not.
+    
+    This is something which needs to be considered.  By default, I do not
+    think removed objects should be purged from the namespace.  However it
+    could be made configurable.
 
             name_space, object_name = guid.split(".")
             module = None
@@ -590,7 +660,7 @@ class CodeCompiler:
             if module is None:
                 continue
             if newObjectRef is not None:
-                module.__dict__.update({object_name:newObjectRef})
+                module.__dict__.update({ object_name: newObjectRef })
             else:
                 del module.__dict__[object_name]
 
@@ -608,12 +678,7 @@ class CodeCompiler:
 
             module.__name__ = name_space
             sys.modules[name_space] = module
-
-    def GetRelativePath(self, filePath):
-        for dirPath in self.directories.iterkeys():
-            if filePath.startswith(dirPath):
-                return filePath[len(dirPath)+1:]
-        return filePath
+"""
 
 
 def RebindFunction(newFunction, oldLocals):
@@ -655,13 +720,14 @@ def ResolvePath(originalPath):
     return path
 
 def Test():
-    coreScriptPath = ResolvePath(r"server-core")
-    gameScriptPath = ResolvePath(r"server-game")
+    commonScriptPath = ResolvePath(r"examples\game-simple-1\game-common")
+    serverScriptPath = ResolvePath(r"examples\game-simple-1\game-server")
 
     # Add the directories under these two, to the server namespace.
-    cc = CodeCompiler()
-    cc.AddDirectory(coreScriptPath, "server")
-    cc.AddDirectory(gameScriptPath, "server")
+    cc = CodeCompiler(detectChanges=True)
+    cc.AddDirectory(commonScriptPath, "server")
+    cc.AddDirectory(serverScriptPath, "server")
+    cc.internalFileMonitor.StartWatching()
 
     print
     print "TEST"
@@ -676,6 +742,10 @@ def Test():
     print services
 
     print BlahService
+    
+    import time
+    while 1:
+        time.sleep(10)
 
 if __name__ == "__main__":
     Test()

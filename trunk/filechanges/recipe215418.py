@@ -34,7 +34,7 @@ def Prepare(handler):
     # them.
     Check(handler, skipEvents=True)
 
-def Check(handler, delay=1.0, skipEvents=False):
+def Check(handler, skipEvents=False):
     # Basic principle: watchState is a dictionary mapping paths to
     # modification times.  We repeatedly crawl through the directory
     # tree rooted at 'path', doing a stat() on each file and comparing
@@ -44,6 +44,12 @@ def Check(handler, delay=1.0, skipEvents=False):
         # Traversal function for directories
         for filename in files:
             path = os.path.join(dirname, filename)
+            
+            # This is unnecessary.  And it seems to result in false alarms
+            # because Windows.. touches directories for no reason unexpectedly
+            # triggering change events when this is started??  No idea.
+            if os.path.isdir(path):
+                continue
 
             try:
                 t = os.stat(path)
