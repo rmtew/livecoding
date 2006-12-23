@@ -12,17 +12,8 @@ import os, time
 import threading, Queue
 
 
-def IsModuleAvailable(moduleName):
-    try:
-        __import__(moduleName)
-        return True
-    except ImportError:
-        return False
-
-
 class ChangeHandler:
     watchState = None
-    ready = False
 
     def __init__(self, callback, delay=1.0):
         self.callback = callback
@@ -31,16 +22,14 @@ class ChangeHandler:
         self.thread = None
         self.directories = []
 
+        self.skipList = [
+            os.path.join(os.path.sep, ".svn", os.path.sep),
+        ]
+
     def AddDirectory(self, path):
         self.directories.append(path)
         if self.thread is None:
             self.thread = ChangeThread(self, self.delay)
-
-    def StartWatching(self):
-        """ Call this after all the directories are added.  Otherwise if there is more
-            than one directory added, this will give false alarms as it detects the
-            contents of the freshly added directories mid-run. """
-        self.ready = True
 
     def ProcessFileAddition(self, path):
         self.callback(path, added=True)
@@ -50,6 +39,18 @@ class ChangeHandler:
 
     def ProcessFileDeletion(self, path):
         self.callback(path, deleted=True)
+
+    def ShouldIgnorePathEntry(self, path):
+        # By default this concentrates on files, not directories.
+        if os.path.isdir(path):
+            return True
+
+        # Perhaps there are some standard things we should ignore.
+        for skipPath in self.skipList:
+            if skipPath in path:
+                return True
+
+        return False
 
 class ChangeThread(threading.Thread):
     def __init__(self, handler, delay, **kwargs):
@@ -61,9 +62,6 @@ class ChangeThread(threading.Thread):
         self.start()
         
     def run(self):
-        while not self.handler.ready:
-            time.sleep(1.0)
-
         module = None
         # Not ready for use.  If it is going to handle multiple directories,
         # it needs to be non-blocking.

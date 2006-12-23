@@ -50,8 +50,8 @@ after several years of using another arbitrary one in our day to day work.
 
 == Todo ==
 
- * When a module has entries from multiple files combined into it, there
-   needs to be some simple way to indicate this in the __file__ value.
+ * It should be possible to abstract out a Namespace class, which would
+   handle one top-level directory.
 
 """
 
@@ -76,71 +76,10 @@ CCSTATE_BUILT       = 3
 CCMODE_NORMAL       = 0
 CCMODE_VERBOSE      = 1
 
-class CompiledFile:
-    def __init__(self, filePath = None, namespace=None):
-        self.namespace = namespace
-        self.filePath = filePath
-        self.codeObject = None
-        self.timeStamp = None
-        self.locals = {
-            "__file__": filePath,
-        }
-        self.exports = None
-        if file is not None:
-            return self.Compile()
 
-    def Compile(self):
-        sys.stdout.write("Compiling file: %s\n"%(self.filePath))
-
-        f = open(self.filePath)
-        try:
-            self.timeStamp = os.fstat(f.fileno())
-        except AttributeError:
-            sys.exc_clear()
-            self.timeStamp = os.stat(self.filePath)
-
-        codestring = f.read()
-        f.close()
-        codestring = codestring.replace("\r\n", "\n")
-        codestring = codestring.replace("\r", "\n")
-        if codestring and codestring[-1] != "\n":
-            codestring += "\n"
-
-        try:
-            self.codeObject = __builtin__.compile(codestring, self.filePath, "exec")
-        except SyntaxError, e:
-            sys.stderr.write("Compilation failed: %s\n"%(self.filePath))
-            lines = traceback.format_exception_only(SyntaxError, e)
-            for line in lines:
-                sys.stderr.write(line.replace('File "<string>"', 'File %s'%(self.filePath)))
-            sys.exc_clear()
-            self.codeObject = None
-            self.timeStamp = None
-
-    def Actualize(self, path):
-        stripIdx = path.rfind("\\")
-        # Should we clear self.locals?  Need to think about this.
-        eval(self.codeObject, self.locals)
-
-    def GetExports(self):
-        # We cache this because after what it has within it has been processed, it
-        # will no longer be detectable as exported (as it will have been claimed..
-        # __module__ set).
-        if self.exports is None:
-            exports = {}
-            for k, v in self.locals.iteritems():
-                if k in ("__builtins__", "__file__"):
-                    continue
-    
-                if hasattr(v, "__module__"):
-                    # New classes and new functions respectively.  These will get
-                    # a module set when these exports are put in place.
-                    if v.__module__ is None or v.__module__ == "__builtin__":
-                        exports[k] = v
-                #else:
-                #    print "-- UNKNOWN", type(v), k, v, v.__module__, v.__dict__.keys()
-            self.exports = exports
-        return self.exports
+#class Namespace:
+#    def __init__(self, path):
+#        self.path = path
 
 
 class CodeCompiler:
@@ -680,6 +619,70 @@ class CodeCompiler:
             sys.modules[name_space] = module
 """
 
+class CompiledFile:
+    def __init__(self, filePath = None, namespace=None):
+        self.namespace = namespace
+        self.filePath = filePath
+        self.codeObject = None
+        self.timeStamp = None
+        self.locals = {
+            "__file__": filePath,
+        }
+        self.exports = None
+        if file is not None:
+            return self.Compile()
+
+    def Compile(self):
+        sys.stdout.write("Compiling file: %s\n"%(self.filePath))
+
+        f = open(self.filePath)
+        try:
+            self.timeStamp = os.fstat(f.fileno())
+        except AttributeError:
+            sys.exc_clear()
+            self.timeStamp = os.stat(self.filePath)
+
+        codestring = f.read()
+        f.close()
+        codestring = codestring.replace("\r\n", "\n")
+        codestring = codestring.replace("\r", "\n")
+        if codestring and codestring[-1] != "\n":
+            codestring += "\n"
+
+        try:
+            self.codeObject = __builtin__.compile(codestring, self.filePath, "exec")
+        except SyntaxError, e:
+            sys.stderr.write("Compilation failed: %s\n"%(self.filePath))
+            lines = traceback.format_exception_only(SyntaxError, e)
+            for line in lines:
+                sys.stderr.write(line.replace('File "<string>"', 'File %s'%(self.filePath)))
+            sys.exc_clear()
+            self.codeObject = None
+            self.timeStamp = None
+
+    def Actualize(self, path):
+        stripIdx = path.rfind("\\")
+        # Should we clear self.locals?  Need to think about this.
+        eval(self.codeObject, self.locals)
+
+    def GetExports(self):
+        # We cache this because after what will be returned has been processed,
+        # the criteria by which we detect things will fail to detect them again.
+        if self.exports is None:
+            exports = {}
+            for k, v in self.locals.iteritems():
+                if k in ("__builtins__", "__file__"):
+                    continue
+    
+                if hasattr(v, "__module__"):
+                    # New classes and new functions respectively.  These will get
+                    # a module set when these exports are put in place.
+                    if v.__module__ is None or v.__module__ == "__builtin__":
+                        exports[k] = v
+                #else:
+                #    print "-- UNKNOWN", type(v), k, v, v.__module__, v.__dict__.keys()
+            self.exports = exports
+        return self.exports
 
 def RebindFunction(newFunction, oldLocals):
     '''return *f* with some globals rebound.'''
@@ -727,7 +730,6 @@ def Test():
     cc = CodeCompiler(detectChanges=True)
     cc.AddDirectory(commonScriptPath, "server")
     cc.AddDirectory(serverScriptPath, "server")
-    cc.internalFileMonitor.StartWatching()
 
     print
     print "TEST"

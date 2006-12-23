@@ -45,10 +45,7 @@ def Check(handler, skipEvents=False):
         for filename in files:
             path = os.path.join(dirname, filename)
             
-            # This is unnecessary.  And it seems to result in false alarms
-            # because Windows.. touches directories for no reason unexpectedly
-            # triggering change events when this is started??  No idea.
-            if os.path.isdir(path):
+            if handler.ShouldIgnorePathEntry(path):
                 continue
 
             try:
