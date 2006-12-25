@@ -26,6 +26,13 @@ To do list:
   in a blocking way, this means it will wait for an event on one directory
   we are watching before it can move onto one of the other directories. It
   needs to call ReadDirectoryChanges asynchronously via overlapped thingies.
+
+Why this is not being used:
+
+- Because it sends duplicate events.  Every event comes twice.  Might be
+  a pywin32 problem.
+
+
 """
 
 import os
@@ -86,6 +93,6 @@ def Check(handler):
             full_filename = os.path.join(path, file)
             if not os.path.isdir(full_filename):
                 if not os.path.exists(full_filename):
-                    handler.ProcessFileDeletion(full_filename)
+                    handler.ProcessFileChange(full_filename, deleted=True)
                 else:
-                    handler.ProcessFileChange(full_filename)
+                    handler.ProcessFileChange(full_filename, changed=True)

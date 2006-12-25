@@ -8,7 +8,7 @@
 #   their problem.
 #
 
-import os, time
+import os, sys, time, traceback
 import threading, Queue
 
 
@@ -23,7 +23,8 @@ class ChangeHandler:
         self.directories = []
 
         self.skipList = [
-            os.path.join(os.path.sep, ".svn", os.path.sep),
+            "\\.svn\\",
+            "/.svn/",
         ]
 
     def AddDirectory(self, path):
@@ -31,14 +32,12 @@ class ChangeHandler:
         if self.thread is None:
             self.thread = ChangeThread(self, self.delay)
 
-    def ProcessFileAddition(self, path):
-        self.callback(path, added=True)
-
-    def ProcessFileChange(self, path):
-        self.callback(path, changed=True)
-
-    def ProcessFileDeletion(self, path):
-        self.callback(path, deleted=True)
+    def ProcessFileChange(self, filePath, added=False, changed=False, deleted=False):
+        try:
+            self.callback(filePath, added=added, changed=changed, deleted=deleted)
+        except:
+            traceback.print_exc()
+            sys.exc_clear()
 
     def ShouldIgnorePathEntry(self, path):
         # By default this concentrates on files, not directories.
