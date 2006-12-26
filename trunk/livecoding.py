@@ -8,7 +8,7 @@ it and can be found in the same directory as the file 'LICENSE'.
 
  * Michael Brannan
  * Richard Tew <richard.m.tew@gmail.com>
- 
+
 == Overview ==
 
 Directories containing Python scripts can be registered to be monitored
@@ -53,7 +53,7 @@ after several years of using another arbitrary one in our day to day work.
 """
 
 import os
-# import marshal 
+# import marshal
 import __builtin__
 import traceback
 import sys
@@ -83,7 +83,7 @@ class CodeManager:
         # Import hook state.
         self.__import__ = None
         self.lastImport = None
-        
+
         # Internal file change monitoring.
         self.internalFileMonitoring = detectChanges
         if detectChanges:
@@ -149,7 +149,7 @@ class CodeManager:
             if VERBOSE:
                 print "File '%s' with namespace '%s' had entry '%s' removed." % (filePath, name_space, object_name)
             return
-    
+
         lastModule = None
         currentNamespace = ""
         for namePart in name_space.split("."):
@@ -199,7 +199,7 @@ class CodeManager:
         This can be called manually if the automatic file change detection is
         not installed.  Your code base might be handling this already at a
         higher level, or something similar.
-        """    
+        """
         sys.stdout.write("Processing changed file: %s\n"%(filePath))
 
         importable = None
@@ -227,7 +227,8 @@ class CodeManager:
             raise NotImplementedError("need to generate the namespace", filePath)
 
         newCompiledFile = CompiledFile(filePath, namespace)
-        if newCompiledFile.timeStamp is None and newCompiledFile.codeObject is None:
+        # if newCompiledFile.timeStamp is None and newCompiledFile.codeObject is None:
+        if newCompiledFile.codeObject is None:
             return
         try:
             newCompiledFile.Actualize(filePath)
@@ -341,7 +342,7 @@ class CodeManager:
             for k, v in newObject.__dict__.iteritems():
                 if k in ("__builtins__", "__doc__", "__module__"):
                     continue
-                st.writeline("%s : %s" % (k, v))
+                st.write("%s : %s\n" % (k, v))
             if st.len:
                 sys.stdout.writeline("change (newObject):")
                 st.seek(0, 0)
@@ -352,7 +353,7 @@ class CodeManager:
                 for k, v in oldObject.__dict__.iteritems():
                     if k in ("__builtins__", "__doc__", "__module__"):
                         continue
-                    st.writeline("%s : %s" % (k, v))
+                    st.write("%s : %s\n" % (k, v))
                 if st.len:
                     sys.stdout.writeline("change (oldObject):")
                     st.seek(0, 0)
@@ -439,7 +440,7 @@ class CodeManager:
                         overrides = self.overrides[moduleNamespace][className][attributeName]
                         # The first entry is the original value.  The subsequent entries are the overrides to install.
                         oldKlass, oldOriginalValue = overrides[0]
-                        
+
                         # Chain the overrides from the first override down to the original value.
 
     def RevertOverrides(self, moduleNamespace, className, attributeName):
@@ -469,7 +470,7 @@ class CodeManager:
     and more correct UpdateNamespaceEntry, there is still a reason I have
     left it here.  Which is to remind me that it handles removal of entries
     where Update.. does not.
-    
+
     This is something which needs to be considered.  By default, I do not
     think removed objects should be purged from the namespace.  However it
     could be made configurable.
@@ -515,7 +516,7 @@ class ImportableDirectory:
 
         self.path = path
         self.ns = ns
-        
+
         self.directories = {}
         self.invalidEntries = [ ".svn" ]
 
@@ -557,7 +558,8 @@ class ImportableDirectory:
             random.shuffle(fileList)
             for filePath in fileList:
                 compiledFile = CompiledFile(filePath, namespace=ns)
-                if compiledFile.timeStamp is not None and compiledFile.codeObject is not None:
+                # if compiledFile.timeStamp is not None and compiledFile.codeObject is not None:
+                if compiledFile.codeObject is not None:
                     self.compiledFiles[filePath] = compiledFile
                     candidates.append(filePath)
                 else:
@@ -610,7 +612,7 @@ class CompiledFile:
         self.namespace = namespace
         self.filePath = filePath
         self.codeObject = None
-        self.timeStamp = None
+        #self.timeStamp = None       # Will be used in future for caching compiled code.
         self.locals = {
             "__file__": filePath,
         }
@@ -619,11 +621,12 @@ class CompiledFile:
         sys.stdout.write("Compiling file: %s\n"%(self.filePath))
 
         f = open(self.filePath)
-        try:
-            self.timeStamp = os.fstat(f.fileno())
-        except AttributeError:
-            sys.exc_clear()
-            self.timeStamp = os.stat(self.filePath)
+        if False:
+            try:
+                self.timeStamp = os.fstat(f.fileno())
+            except AttributeError:
+                sys.exc_clear()
+                self.timeStamp = os.stat(self.filePath)
 
         codestring = f.read()
         f.close()
@@ -641,7 +644,7 @@ class CompiledFile:
                 sys.stderr.write(line.replace('File "<string>"', 'File %s'%(self.filePath)))
             sys.exc_clear()
             self.codeObject = None
-            self.timeStamp = None
+            # self.timeStamp = None
 
     def Actualize(self, path):
         stripIdx = path.rfind("\\")
@@ -656,7 +659,7 @@ class CompiledFile:
             for k, v in self.locals.iteritems():
                 if k in ("__builtins__", "__file__"):
                     continue
-    
+
                 if hasattr(v, "__module__"):
                     # New classes and new functions respectively.  These will get
                     # a module set when these exports are put in place.
@@ -669,15 +672,6 @@ class CompiledFile:
 
 def RebindFunction(newFunction, oldLocals):
     '''return *f* with some globals rebound.'''
-    # Not sure what this does, it seems to do nothing but prevent
-    # the globals from being fixed.
-    #d = {}
-    #if objectToBindTo and hasattr(objectToBindTo, "__dir__"):
-    #    d.update(objectToBindTo.__dir__)
-    #if not d:
-    #    return newFunction
-    if objectToBindTo and hasattr(objectToBindTo, "__dir__"):
-        raise NotImplementedError("unexpected case")
     nf = types.FunctionType(newFunction.func_code, oldLocals, newFunction.func_name, newFunction.func_defaults or ())
     nf.__doc__= newFunction.__doc__
     if newFunction.__dict__ is not None:
@@ -727,7 +721,7 @@ def Test():
     print services
 
     print BlahService
-    
+
     import time
     while 1:
         time.sleep(10)
