@@ -8,19 +8,18 @@
 #   their problem.
 #
 
-import os, sys, time, traceback
+import os, sys, time, traceback, weakref
 import threading, Queue
 
 
 class ChangeHandler:
-    watchState = None
-
     def __init__(self, callback, delay=1.0):
         self.callback = callback
         self.delay = delay
 
         self.thread = None
         self.directories = []
+        self.watchState = None
 
         self.skipList = [
             "\\.svn\\",
@@ -30,7 +29,7 @@ class ChangeHandler:
     def AddDirectory(self, path):
         self.directories.append(path)
         if self.thread is None:
-            self.thread = ChangeThread(self, self.delay)
+            self.thread = ChangeThread(weakref.proxy(self), self.delay)
 
     def ProcessFileChange(self, filePath, added=False, changed=False, deleted=False):
         try:
@@ -59,7 +58,7 @@ class ChangeThread(threading.Thread):
         self.handler = handler
         self.delay = delay
         self.start()
-        
+
     def run(self):
         module = None
         # Not ready for use.  If it is going to handle multiple directories,
@@ -67,20 +66,25 @@ class ChangeThread(threading.Thread):
         #if os.name == "nt":
         #    if IsModuleAvailable("win32file"):
         #        import golden3
-        #        module = golden3        
+        #        module = golden3
         if module is None:
             import recipe215418
             module = recipe215418
         module.Prepare(self.handler)
 
-        while len(self.handler.directories):
-            module.Check(self.handler)
-            time.sleep(self.delay)
+        try:
+            while len(self.handler.directories):
+                module.Check(self.handler)
+                time.sleep(self.delay)
+        except ReferenceError:
+            print "Thread exited"
+
 
 if __name__ == "__main__":
     path = r"C:\devkitPro\dl\livecoding\livecoding-google\trunk\filechanges"
     def f(path, added=False, changed=False, deleted=False):
-        print "f", path, (added, changed, deleted) 
+        print "f", path, (added, changed, deleted)
+
     ch = ChangeHandler(f)
     ch.AddDirectory(path)
 

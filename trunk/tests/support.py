@@ -11,23 +11,29 @@ class Object(object):
 class MonkeyPatcher(object):
     def __init__(self):
         self.dirTree = {}
+        self.store = {}
 
     def __enter__(self):
-        self._open = __builtin__.open
-        __builtin__.open = self.open
+        for k, v in MonkeyPatcher.__dict__.iteritems():
+            if not k.startswith("MP_"):
+                continue
 
-        self._os_path_isfile = os.path.isfile
-        os.path.isfile = self.os_path_isfile
+            # Store the original value.
+            self.store[v.__doc__] = eval(v.__doc__)
 
-        self._os_listdir = os.listdir
-        os.listdir = self.os_listdir
+            # Insert our replacement value.
+            idx = v.__doc__.rfind(".")
+            moduleName, attrName = v.__doc__[:idx], v.__doc__[idx+1:]
+            setattr(eval(moduleName), attrName, getattr(self, k))
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        os.listdir = self._os_listdir
-        os.path.isfile = self._os_path_isfile
-        __builtin__.open = self._open
+        for k, v in self.store.iteritems():
+            # Restore the original value.
+            idx = k.rfind(".")
+            moduleName, attrName = k[:idx], k[idx+1:]
+            setattr(eval(moduleName), attrName, v)
 
         return False
 
@@ -50,18 +56,21 @@ class MonkeyPatcher(object):
 
     # Monkeypatched functions.
 
-    def os_listdir(self, path):
+    def MP_os_listdir(self, path):
+        "os.listdir"
         v = self.GetDirectoryEntry(path)
         if type(v) is dict:
             return v.keys()
         elif type(v) is list:
             return v
 
-    def os_path_isfile(self, path):
+    def MP_os_path_isfile(self, path):
+        "os.path.isfile"
         v = self.GetDirectoryEntry(path)
         return type(v) in types.StringTypes
 
-    def open(self, path):
+    def MP_open(self, path):
+        "__builtin__.open"
         v = self.GetDirectoryEntry(path)
 
         instance = Object()
@@ -84,6 +93,6 @@ if __name__ == "__main__":
     with MonkeyPatcher() as mp:
         mp.SetDirectoryStructure(d)
 
-        print os.listdir("A")
+        # print os.listdir("A")
 
         mp.SetFileContents(aFileName, "#....")

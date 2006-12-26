@@ -52,16 +52,10 @@ after several years of using another arbitrary one in our day to day work.
 
 """
 
-import os
+import os, sys, types, random, weakref, StringIO, __builtin__
+import imp, new
 # import marshal
-import __builtin__
 import traceback
-import sys
-import types
-import imp
-import new
-import random
-import StringIO
 
 CCSTATE_FAILED      = 0
 CCSTATE_INITIALIZED = 1
@@ -88,13 +82,17 @@ class CodeManager:
         self.internalFileMonitoring = detectChanges
         if detectChanges:
             import filechanges
-            self.internalFileMonitor = filechanges.ChangeHandler(self.ProcessChangedFile)
+            # Grabbing a weakref to a method of this instance requires me to
+            # hold onto the method as well.
+            pr = weakref.ref(self)
+            cb = lambda *args, **kwargs: pr.ProcessChangedFile(*args, **kwargs)
+            self.internalFileMonitor = filechanges.ChangeHandler(cb)
 
     # ------------------------------------------------------------------------
     def AddDirectory(self, path, ns):
         CodeManager.state = CCSTATE_BUILDING
         try:
-            self.directories[path] = ImportableDirectory(self, path, ns)
+            self.directories[path] = ImportableDirectory(weakref.proxy(self), path, ns)
 
             if self.internalFileMonitoring:
                 self.internalFileMonitor.AddDirectory(path)
