@@ -36,7 +36,7 @@ it and can be found in the same directory as the file 'LICENSE'.
 
 """
 
-__author__ = "Richard Tew"
+__authors__ = "Michael Brannan, Richard Tew"
 __version__ = "1.0"
 
 import os, sys, types, random, weakref, StringIO, __builtin__
