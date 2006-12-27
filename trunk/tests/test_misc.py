@@ -3,7 +3,7 @@ import livecoding, support
 import types, sys, os, unittest, weakref, __builtin__
 
 aFileName = os.path.join("A", "a.py")
-bFileName = os.path.join("B", "b.py")
+bFileName = os.path.join("B", os.path.join("C", "b.py"))
 
 aContentsBase = """
 class ClassA:
@@ -29,7 +29,9 @@ d1 = {
         "a.py": aContentsBase,
     },
     "B": {
-        "b.py": bContentsBase,
+        "C": {
+            "b.py": bContentsBase,
+        },
     },
 }
 
@@ -66,11 +68,37 @@ class ImportTestCase(unittest.TestCase):
             cm.AddDirectory("A", "base")
             cm.AddDirectory("B", "base")
 
-            from base import ClassA, ClassB
+            from base import ClassA
+            from base.C import ClassB
             a, b = ClassA(), ClassB()
             self.failUnlessEqual(a.FunctionA(), b.FunctionA())
 
-    def test_cleanup(self):
+    def test_directory_removal(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(d1)
+            mp.SetFileContents(aFileName, aContentsBase)
+            mp.SetFileContents(bFileName, bContentsBase)
+
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+            cm.AddDirectory("B", "base")
+            cm.RemoveDirectory("B")
+
+            try:
+                from base import C
+                self.fail("namespace entry 'C' still available")
+            except ImportError:
+                pass
+
+            cm.RemoveDirectory("A")
+
+            try:
+                import base
+                self.fail("namespace entry 'base' still available")
+            except ImportError:
+                pass
+
+    def test_garbage_collection(self):
         """ It is an expectation that when all known references to the code
             manager are released, then the code manager will be released itself. """
         with support.MonkeyPatcher() as mp:
@@ -100,6 +128,6 @@ class UpdateTestCase(unittest.TestCase):
 
             cm.ProcessChangedFile(aFileName, changed=True)
 
-            from base import ClassB
+            from base.C import ClassB
             b = ClassB()
             self.failUnlessEqual(b.FunctionA(), "a2")

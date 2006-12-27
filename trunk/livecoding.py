@@ -100,6 +100,12 @@ class CodeManager:
             CodeManager.state = CCSTATE_FAILED
             raise
 
+    def RemoveDirectory(self, path):
+        if self.internalFileMonitoring:
+            self.internalFileMonitor.RemoveDirectory(path)
+
+        del self.directories[path]
+
     # ------------------------------------------------------------------------
     # It is unnecessary to override the built-in import function in order to
     # put our namespace in place.  However, we can use it to find out what
@@ -142,6 +148,47 @@ class CodeManager:
         for name, objectRef in exports.iteritems():
             self.UpdateNamespaceEntry(filePath, namespace, name, None, objectRef)
 
+    def ExpungeCompiledFile(self, compiledFile):
+        filePath = compiledFile.filePath
+        namespace = compiledFile.namespace
+        exports = compiledFile.GetExports()
+
+        # Remove the most recent set of exports.
+        module = sys.modules[namespace]
+        for name in exports:
+            delattr(module, name)
+
+        # Remove the accrued baggage.
+        # TBD.  Not tracking this yet.
+
+        # Go through the hierarchy of modules and remove this files touch
+        # from them, deleting the modules if it was the last associated
+        # file with any of them.
+        self.RemoveFileFromModule(filePath, namespace)
+
+    def RemoveFileFromModule(self, filePath, namespace, childName=None):
+        # This needs to remove two kinds of module entry.  The absolute
+        # entry and the relative entry.
+        module = sys.modules[namespace]
+
+        if childName:
+            delattr(module, childName)
+
+        filePaths = module.__file__.split(";")
+        if filePath in filePaths:
+            filePaths.remove(filePath)
+            if not len(filePaths):
+                del sys.modules[namespace]
+            else:
+                module.__file__ = ";".join(filePaths)
+
+            idx = namespace.rfind(".")
+            if idx != -1:
+                self.RemoveFileFromModule(filePath, namespace[:idx], namespace[idx+1:])
+        else:
+            raise RuntimeError("file did not contribute to module", namespace, filePath)
+
+    # ------------------------------------------------------------------------
     def UpdateNamespaceEntry(self, filePath, name_space, object_name, oldValue, newValue=None):
         if newValue is None:
             if VERBOSE:
@@ -176,15 +223,23 @@ class CodeManager:
                 setattr(lastModule, namePart, module)
                 sys.modules[currentNamespace] = module
 
+            moduleFile = getattr(module, "__file__", "")
+            if filePath not in moduleFile:
+                if len(moduleFile):
+                    moduleFile += ";"
+                moduleFile += filePath
+            module.__dict__["__file__"] = moduleFile
+
             lastModule = module
 
-        moduleFile = getattr(module, "__file__", "")
-        if filePath not in moduleFile:
-            if len(moduleFile):
-                moduleFile += ";"
-            moduleFile += filePath
+        if False:
+            moduleFile = getattr(module, "__file__", "")
+            if filePath not in moduleFile:
+                if len(moduleFile):
+                    moduleFile += ";"
+                moduleFile += filePath
 
-        module.__dict__.update({ object_name: newValue, "__file__": moduleFile })
+        module.__dict__.update({ object_name: newValue, })
         all = module.__dict__.get("__all__", [])
         if object_name not in all:
             all.append(object_name)
@@ -524,7 +579,14 @@ class ImportableDirectory:
         self.CompileFiles(path, self.ProcessDirectory(path, ns))
 
     def __del__(self):
-        pass
+        try:
+            bool(self.mgr)
+        except ReferenceError:
+            return
+
+        # Remove this directories entries from the namespace.
+        for compiledFile in self.compiledFiles.itervalues():
+            self.mgr.ExpungeCompiledFile(compiledFile)
 
     def ProcessDirectory(self, path, ns, files=None):
         if path in self.directories:

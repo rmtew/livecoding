@@ -38,13 +38,17 @@ def Check(handler, skipEvents=False):
     # Basic principle: watchState is a dictionary mapping paths to
     # modification times.  We repeatedly crawl through the directory
     # tree rooted at 'path', doing a stat() on each file and comparing
-    # the modification time.  
+    # the modification time.
 
-    def f (handler, dirname, files):
+    def f(data, dirname, files):
+        handler, tldPath = data
+        if not handler.watchState.has_key(tldPath):
+            handler.watchState[tldPath] = {}
+
         # Traversal function for directories
         for filename in files:
             path = os.path.join(dirname, filename)
-            
+
             if handler.ShouldIgnorePathEntry(path):
                 continue
 
@@ -69,13 +73,19 @@ def Check(handler, skipEvents=False):
                 handler.ProcessFileChange(path, added=True)
 
             # Record current mtime of file.
-            handler.watchState[path] = t.st_mtime
+            handler.watchState[tldPath][path] = t.st_mtime
 
-    changed_list = []
-    remaining_files = handler.watchState.copy()
+    # What directories we are managing might have changed.  By doing this we
+    # can drop the results for the old directories.
+    remainingFilesByPath = {}
+    for path in handler.directories:
+        remainingFilesByPath[path] = handler.watchState.get(path, {})
+
     handler.watchState = {}
     for path in handler.directories:
-        os.path.walk(path, f, handler)
+        remaining_files = remainingFilesByPath[path]
+        os.path.walk(path, f, (handler, path))
+
     if not skipEvents:
         for path in remaining_files.keys():
             handler.ProcessFileChange(path, deleted=True)

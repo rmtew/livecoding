@@ -31,6 +31,9 @@ class ChangeHandler:
         if self.thread is None:
             self.thread = ChangeThread(weakref.proxy(self), self.delay)
 
+    def RemoveDirectory(self, path):
+        self.directories.remove(path)
+
     def ProcessFileChange(self, filePath, added=False, changed=False, deleted=False):
         try:
             self.callback(filePath, added=added, changed=changed, deleted=deleted)
@@ -73,20 +76,28 @@ class ChangeThread(threading.Thread):
         module.Prepare(self.handler)
 
         try:
-            while len(self.handler.directories):
+            while True:
                 module.Check(self.handler)
                 time.sleep(self.delay)
         except ReferenceError:
-            print "Thread exited"
+            pass
 
 
 if __name__ == "__main__":
-    path = r"C:\devkitPro\dl\livecoding\livecoding-google\trunk\filechanges"
+    # Simple callback which informs of any events via printing.
     def f(path, added=False, changed=False, deleted=False):
         print "f", path, (added, changed, deleted)
 
+    # This script may not be run in this directory, handle that case.
+    if os.path.sep in __file__:
+        path = os.path.split(__file__)[0]
+    else:
+        path = os.getcwd()
+
+    # Start monitoring the given directory.
     ch = ChangeHandler(f)
     ch.AddDirectory(path)
 
+    # Wait for you to change a file in the directory this file is in.
     while 1:
         time.sleep(10)

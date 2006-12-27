@@ -69,6 +69,11 @@ class MonkeyPatcher(object):
         v = self.GetDirectoryEntry(path)
         return type(v) in types.StringTypes
 
+    def MP_os_path_isdir(self, path):
+        "os.path.isdir"
+        v = self.GetDirectoryEntry(path)
+        return type(v) == types.DictType
+
     def MP_open(self, path):
         "__builtin__.open"
         v = self.GetDirectoryEntry(path)
