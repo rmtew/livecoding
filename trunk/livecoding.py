@@ -73,7 +73,10 @@ class CodeManager:
             # hold onto the method as well.
             pr = weakref.ref(self)
             cb = lambda *args, **kwargs: pr.ProcessChangedFile(*args, **kwargs)
-            self.internalFileMonitor = filechanges.ChangeHandler(cb)
+            self.internalFileMonitor = self.GetChangeHandler(cb)
+
+    def GetChangeHandler(self, cb):
+        return filechanges.ChangeHandler(cb)
 
     # ------------------------------------------------------------------------
     def AddDirectory(self, path, ns):
@@ -517,6 +520,13 @@ class CodeManager:
                     del self.overrides[moduleNamespace]
             else:
                 self.InjectOverrides(moduleNamespace, className, attributeName)
+
+class StacklessCodeManager(CodeManager):
+    def GetChangeHandler(self, cb):
+        return filechanges.ChangeHandler(cb, useThreads=False)
+
+    def DispatchPendingFileChanges(self):
+        self.internalFileMonitor.ProcessFileEvents()
 
 
 class ImportableDirectory:

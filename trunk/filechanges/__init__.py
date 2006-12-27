@@ -13,7 +13,7 @@ import threading, Queue
 
 
 class ChangeHandler:
-    def __init__(self, callback, delay=1.0):
+    def __init__(self, callback, delay=1.0, useThread=True):
         self.callback = callback
         self.delay = delay
 
@@ -25,15 +25,24 @@ class ChangeHandler:
             "/.svn/",
         ]
 
-        self.thread = ChangeThread(weakref.proxy(self), self.delay)
+        self.thread = None
+        self.module = None
+
+        if useThread:
+            self.thread = ChangeThread(weakref.proxy(self), self.delay)
+        else:
+            self.module = GetFileChangeModule()
+            self.module.Prepare(self)
 
     def AddDirectory(self, path):
         self.directories.append(path)
+        if self.module:
+            self.module.Prepare(self)
 
     def RemoveDirectory(self, path):
         self.directories.remove(path)
 
-    def ProcessFileChange(self, filePath, added=False, changed=False, deleted=False):
+    def DispatchFileChange(self, filePath, added=False, changed=False, deleted=False):
         try:
             self.callback(filePath, added=added, changed=changed, deleted=deleted)
         except:
@@ -52,6 +61,22 @@ class ChangeHandler:
 
         return False
 
+    def ProcessFileEvents(self):
+        self.module.Check(self)
+
+def GetFileChangeModule():
+    module = None
+    # Not ready for use.  If it is going to handle multiple directories,
+    # it needs to be non-blocking.
+    #if os.name == "nt":
+    #    if IsModuleAvailable("win32file"):
+    #        import golden3
+    #        module = golden3
+    if module is None:
+        import recipe215418
+        module = recipe215418
+    return module
+
 class ChangeThread(threading.Thread):
     def __init__(self, handler, delay, **kwargs):
         threading.Thread.__init__ (self, **kwargs)
@@ -62,16 +87,7 @@ class ChangeThread(threading.Thread):
         self.start()
 
     def run(self):
-        module = None
-        # Not ready for use.  If it is going to handle multiple directories,
-        # it needs to be non-blocking.
-        #if os.name == "nt":
-        #    if IsModuleAvailable("win32file"):
-        #        import golden3
-        #        module = golden3
-        if module is None:
-            import recipe215418
-            module = recipe215418
+        module = GetFileChangeModule()
         module.Prepare(self.handler)
 
         try:
@@ -83,6 +99,8 @@ class ChangeThread(threading.Thread):
 
 
 if __name__ == "__main__":
+    testWithThreads = False
+
     # Simple callback which informs of any events via printing.
     def f(path, added=False, changed=False, deleted=False):
         print "f", path, (added, changed, deleted)
@@ -94,9 +112,14 @@ if __name__ == "__main__":
         path = os.getcwd()
 
     # Start monitoring the given directory.
-    ch = ChangeHandler(f)
+    ch = ChangeHandler(f, useThread=testWithThreads)
     ch.AddDirectory(path)
 
     # Wait for you to change a file in the directory this file is in.
     while 1:
-        time.sleep(10)
+        if testWithThreads:
+            time.sleep(10.0)
+        else:
+            ch.ProcessFileEvents()
+            time.sleep(1.0)
+

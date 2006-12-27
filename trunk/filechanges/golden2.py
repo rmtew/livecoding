@@ -5,6 +5,8 @@ part of the live coding package but is included for the sake of completeness.
 Author: Tim Golden
 Source: http://tgolden.sc.sabren.com/python/win32_how_do_i/watch_directory_for_changes.html
 
+From recipe page:
+
 The approach here is to use the MS FindFirstChangeNotification API, exposed
 via the pywin32 win32file module. It needs a little explanation: you get a
 change handle for a directory (optionally with its subdirectories) for certain
@@ -15,6 +17,10 @@ to compare the before and after images. Repeat to fade.
 
 NB: Only call FindNextChangeNotification if the FindFirst... has fired, not
     if it has timed out.
+
+Todo:
+
+Use this at all.
 """
 
 import os

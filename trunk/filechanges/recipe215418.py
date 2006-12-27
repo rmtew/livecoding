@@ -67,10 +67,10 @@ def Check(handler, skipEvents=False):
                 del remaining_files[path]
                 # File's mtime has been changed since we last looked at it.
                 if not skipEvents and t.st_mtime > mtime:
-                    handler.ProcessFileChange(path, changed=True)
+                    handler.DispatchFileChange(path, changed=True)
             elif not skipEvents:
                 # No recorded modification time, so it must be a brand new file.
-                handler.ProcessFileChange(path, added=True)
+                handler.DispatchFileChange(path, added=True)
 
             # Record current mtime of file.
             handler.watchState[tldPath][path] = t.st_mtime
@@ -88,4 +88,4 @@ def Check(handler, skipEvents=False):
 
     if not skipEvents:
         for path in remaining_files.keys():
-            handler.ProcessFileChange(path, deleted=True)
+            handler.DispatchFileChange(path, deleted=True)

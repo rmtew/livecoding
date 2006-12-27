@@ -77,13 +77,13 @@ def Check(handler):
         #  deleted at once.
         #
         results = win32file.ReadDirectoryChangesW (
-            hDir,                                       # handle 
+            hDir,                                       # handle
             4096,                                       # size
             True,                                       # bWatchSubtree
             win32con.FILE_NOTIFY_CHANGE_FILE_NAME |     # dwNotifyFilter
              win32con.FILE_NOTIFY_CHANGE_DIR_NAME |
              win32con.FILE_NOTIFY_CHANGE_ATTRIBUTES |
-             win32con.FILE_NOTIFY_CHANGE_SIZE | 
+             win32con.FILE_NOTIFY_CHANGE_SIZE |
              win32con.FILE_NOTIFY_CHANGE_LAST_WRITE |
              win32con.FILE_NOTIFY_CHANGE_SECURITY,
             None,                                       # obOverlapped
@@ -93,6 +93,6 @@ def Check(handler):
             full_filename = os.path.join(path, file)
             if not os.path.isdir(full_filename):
                 if not os.path.exists(full_filename):
-                    handler.ProcessFileChange(full_filename, deleted=True)
+                    handler.DispatchFileChange(full_filename, deleted=True)
                 else:
-                    handler.ProcessFileChange(full_filename, changed=True)
+                    handler.DispatchFileChange(full_filename, changed=True)

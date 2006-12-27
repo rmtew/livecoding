@@ -56,7 +56,7 @@ event to the code manager.
   cm.ProcessChangedFile(filePath, added=False, changed=True, deleted=False)
 }}}
 
-Now when Test is called on the instance of 'NetService', it will return 2.
+Now when Test is called on the instance of '!NetService', it will return 2.
 
 *Warning:* If however your file change notifications are done notifies the
 code manager in a thread other than the one your application is running on,
@@ -124,7 +124,7 @@ directly onto the code manager in the same way shown above.
 
 In order to be able to safely dispatch the file changes on the main
 thread from the one they are detected on, a queue can be used in the
-'ManageFileChanges' tasklet to receive them from the other thread.
+'!ManageFileChanges' tasklet to receive them from the other thread.
 
 {{{
   def ManageFileChanges(self, cm, queue):
@@ -139,7 +139,42 @@ thread from the one they are detected on, a queue can be used in the
               pass
       	  # Stall for second before checking again.
           stackless.sleep(1.0)
+
+  import livecoding
+  cm = livecoding.CodeManager()
+  
+  # queue is sourced from elsewhere and the thread managing the
+  # file changes has a reference to it to send things through.
+
+  import stackless
+  stackless.tasklet(ManageFileChanges)(cm, queue)
 }}}
 
 ==== Example: Using the provided file change detection ====
+
+Because using Stackless Python requires that the application manage how and
+when the scheduler is run, it is impossible for this library to just start a
+tasklet internally and know that it will be run and that its file changes
+will get handled properly.  Therefore this library cannot provide any
+automatic Stackless based file change detection.  Another reason not to do
+this is that it is to the benefit of the user to know how and when tasklets
+are scheduled and best they manage the higher level parts of scheduling
+file change detection using the provided detection method.
+
+What this library can do is expose most of the file change handling logic
+as a prewritten function in the alternative code manager class
+'!StacklessCodeManager' which can be scheduled in the following manner.
+
+{{{
+  def ManageFileChanges(self, cm):
+      while True:
+          cm.DispatchPendingFileChanges()
+          stackless.sleep(1.0)
+
+  import livecoding
+  cm = livecoding.StacklessCodeManager(detectChanges=True)
+
+  import stackless
+  stackless.tasklet(ManageFileChanges)(cm)
+}}}
 
