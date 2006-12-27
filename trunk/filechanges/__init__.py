@@ -17,7 +17,6 @@ class ChangeHandler:
         self.callback = callback
         self.delay = delay
 
-        self.thread = None
         self.directories = []
         self.watchState = None
 
@@ -26,10 +25,10 @@ class ChangeHandler:
             "/.svn/",
         ]
 
+        self.thread = ChangeThread(weakref.proxy(self), self.delay)
+
     def AddDirectory(self, path):
         self.directories.append(path)
-        if self.thread is None:
-            self.thread = ChangeThread(weakref.proxy(self), self.delay)
 
     def RemoveDirectory(self, path):
         self.directories.remove(path)

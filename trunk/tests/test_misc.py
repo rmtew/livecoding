@@ -1,8 +1,9 @@
 from __future__ import with_statement
 import livecoding, support
-import types, sys, os, unittest, weakref, __builtin__
+import types, sys, os, unittest, weakref, __builtin__, copy
 
 aFileName = os.path.join("A", "a.py")
+a2FileName = os.path.join("A", "a2.py")
 bFileName = os.path.join("B", os.path.join("C", "b.py"))
 
 aContentsBase = """
@@ -14,6 +15,12 @@ class ClassA:
 aContentsFunctionChange = """
 class ClassA:
     def FunctionA(self):
+        return "a2"
+"""
+
+a2ContentsBase = """
+class ClassA2:
+    def FunctionA2(self):
         return "a2"
 """
 
@@ -35,6 +42,9 @@ d1 = {
     },
 }
 
+def GetDirectoryStructure():
+    return copy.deepcopy(d1)
+
 class SupportTestCase(unittest.TestCase):
     def test_monkeypatching(self):
         # Verify that the monkeypatcher leaves things as they were before
@@ -48,8 +58,7 @@ class SupportTestCase(unittest.TestCase):
 class ImportTestCase(unittest.TestCase):
     def test_importing(self):
         with support.MonkeyPatcher() as mp:
-            mp.SetDirectoryStructure(d1)
-            mp.SetFileContents(aFileName, aContentsBase)
+            mp.SetDirectoryStructure(GetDirectoryStructure())
 
             cm = livecoding.CodeManager()
             cm.AddDirectory("A", "base")
@@ -60,9 +69,7 @@ class ImportTestCase(unittest.TestCase):
 
     def test_subclassing_dependencies(self):
         with support.MonkeyPatcher() as mp:
-            mp.SetDirectoryStructure(d1)
-            mp.SetFileContents(aFileName, aContentsBase)
-            mp.SetFileContents(bFileName, bContentsBase)
+            mp.SetDirectoryStructure(GetDirectoryStructure())
 
             cm = livecoding.CodeManager()
             cm.AddDirectory("A", "base")
@@ -75,9 +82,7 @@ class ImportTestCase(unittest.TestCase):
 
     def test_directory_removal(self):
         with support.MonkeyPatcher() as mp:
-            mp.SetDirectoryStructure(d1)
-            mp.SetFileContents(aFileName, aContentsBase)
-            mp.SetFileContents(bFileName, bContentsBase)
+            mp.SetDirectoryStructure(GetDirectoryStructure())
 
             cm = livecoding.CodeManager()
             cm.AddDirectory("A", "base")
@@ -102,8 +107,7 @@ class ImportTestCase(unittest.TestCase):
         """ It is an expectation that when all known references to the code
             manager are released, then the code manager will be released itself. """
         with support.MonkeyPatcher() as mp:
-            mp.SetDirectoryStructure(d1)
-            mp.SetFileContents(aFileName, aContentsBase)
+            mp.SetDirectoryStructure(GetDirectoryStructure())
 
             cm = livecoding.CodeManager()
             cm.AddDirectory("A", "base")
@@ -116,9 +120,7 @@ class ImportTestCase(unittest.TestCase):
 class UpdateTestCase(unittest.TestCase):
     def test_file_update(self):
         with support.MonkeyPatcher() as mp:
-            mp.SetDirectoryStructure(d1)
-            mp.SetFileContents(aFileName, aContentsBase)
-            mp.SetFileContents(bFileName, bContentsBase)
+            mp.SetDirectoryStructure(GetDirectoryStructure())
 
             cm = livecoding.CodeManager()
             cm.AddDirectory("A", "base")
@@ -131,3 +133,56 @@ class UpdateTestCase(unittest.TestCase):
             from base.C import ClassB
             b = ClassB()
             self.failUnlessEqual(b.FunctionA(), "a2")
+
+    def test_file_addition_bad(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(GetDirectoryStructure())
+
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+
+            try:
+                cm.ProcessChangedFile(bFileName)
+                self.fail("did not expect to handle file change for unhandled directory")
+            except RuntimeError:
+                pass
+
+    def test_file_addition_good(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(GetDirectoryStructure())
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+
+            mp.SetFileContents(a2FileName, a2ContentsBase)
+
+            cm.ProcessChangedFile(a2FileName)
+
+            try:
+                from base import ClassA2
+            except ImportError:
+                self.fail("newly added file was not correctly added to the namespace")
+
+    def test_file_removal(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(GetDirectoryStructure())
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+
+            # Add the file 'a2.py'.
+            mp.SetFileContents(a2FileName, a2ContentsBase)
+
+            # Prod the code manager to use it.
+            cm.ProcessChangedFile(a2FileName)
+
+            # Remove the file 'a2.py'.
+            mp.RemoveDirectoryEntry(a2FileName)
+
+            # Prod the code manager to remove it.
+            cm.ProcessChangedFile(a2FileName)
+
+            # We are checking that what the file contributed is still there.
+            try:
+                from base import ClassA2
+            except ImportError:
+                self.fail("...")
+

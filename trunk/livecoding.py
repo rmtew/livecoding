@@ -9,26 +9,12 @@ it and can be found in the same directory as the file 'LICENSE'.
  * Michael Brannan
  * Richard Tew <richard.m.tew@gmail.com>
 
-== Overview ==
-
-Directories containing Python scripts can be registered to be monitored
-so that any time a change is made to a script the code within it will be
-reloaded and put in place transparently.
-
-Note that these directories should not be those of standard Python
-modules available for normal import.  The reason for this is that this
-library manually processes the contents of registered directories and
-places them so that they can be imported.  By handling this itself,
-this allows the library to know enough to apply changes to modules
-as they happen.
-
-Yes, this means that the directories registered must follow a custom
-structure.  An arbitrary one determined by my fellow author and I
-after several years of using another arbitrary one in our day to day work.
-
 == Further information ==
 
-  http://code.google.com/p/livecoding/wiki/Importing
+  The 'README' file which should come with this.
+
+  The wiki:
+  http://code.google.com/p/livecoding/w/list
 
 == Potential problems ==
 
@@ -48,9 +34,10 @@ after several years of using another arbitrary one in our day to day work.
    not something I will encounter, if I use this and it has Stackless
    support.
 
-== Todo ==
-
 """
+
+__author__ = "Richard Tew"
+__version__ = "1.0"
 
 import os, sys, types, random, weakref, StringIO, __builtin__
 import imp, new
@@ -172,16 +159,23 @@ class CodeManager:
         module = sys.modules[namespace]
 
         if childName:
+            # Delete the relative entry to the child module we just cleaned
+            # out the absolute entry for.
             delattr(module, childName)
 
+        # Remove this files contribution to this module.
         filePaths = module.__file__.split(";")
         if filePath in filePaths:
             filePaths.remove(filePath)
             if not len(filePaths):
+                # Delete the absolute entry for this module as there are no
+                # longer any files contributing to it.
                 del sys.modules[namespace]
             else:
                 module.__file__ = ";".join(filePaths)
 
+            # If there are parent modules, remove this files influence on
+            # them as well.
             idx = namespace.rfind(".")
             if idx != -1:
                 self.RemoveFileFromModule(filePath, namespace[:idx], namespace[idx+1:])
@@ -261,7 +255,12 @@ class CodeManager:
                 importable = self.directories[path]
                 break
         else:
+            # The changed file is not from any of our registered top-level directories.
             raise RuntimeError("Changed file not recognised", filePath)
+
+        if not os.path.exists(filePath):
+            # The file no longer exists.
+            return
 
         oldCompiledFile, oldLocals, oldExports = None, {}, {}
         newCompiledFile, newLocals, newExports = None, {}, {}
@@ -274,10 +273,14 @@ class CodeManager:
             oldExports = oldCompiledFile.GetExports()
             namespace = oldCompiledFile.namespace
         else:
-            # Not supporting addition of new files at this time.  The reason for this
-            # is that sometimes when I start this with the automatic change monitoring
-            # it detects a file addition where there is none.
-            raise NotImplementedError("need to generate the namespace", filePath)
+            oldCompiledFile = None
+
+            dirPath, fileName = os.path.split(filePath)
+            dirPath = dirPath[len(importable.path)+1:]
+
+            namespace = importable.ns
+            if len(dirPath):
+                namespace += "."+ dirPath.replace(os.path.sep, ".")
 
         newCompiledFile = CompiledFile(filePath, namespace)
         # if newCompiledFile.timeStamp is None and newCompiledFile.codeObject is None:
@@ -516,50 +519,6 @@ class CodeManager:
                 self.InjectOverrides(moduleNamespace, className, attributeName)
 
 
-
-"""
-    This is the old code for ProcessChangedFile which added or removed an
-    entry from a namespace.  Given it is replaced by the more developed
-    and more correct UpdateNamespaceEntry, there is still a reason I have
-    left it here.  Which is to remind me that it handles removal of entries
-    where Update.. does not.
-
-    This is something which needs to be considered.  By default, I do not
-    think removed objects should be purged from the namespace.  However it
-    could be made configurable.
-
-            name_space, object_name = guid.split(".")
-            module = None
-            if name_space in sys.modules:
-                module = sys.modules[name_space]
-            else:
-                if newObjectRef is not None:
-                    module = imp.new_module(name_space)
-                    if VERBOSE:
-                        print "Created module:", name_space
-            if module is None:
-                continue
-            if newObjectRef is not None:
-                module.__dict__.update({ object_name: newObjectRef })
-            else:
-                del module.__dict__[object_name]
-
-            all = module.__dict__.get("__all__", None)
-            if all is not None:
-                if newObjectRef is not None:
-                    if object_name not in all:
-                        all.append(object_name)
-                else:
-                    if object_name in all:
-                        all.remove(object_name)
-                        if 0 == len(all):
-                            del sys.modules[name_space]
-                            return
-
-            module.__name__ = name_space
-            sys.modules[name_space] = module
-"""
-
 class ImportableDirectory:
     """ Encapsulate a top level directory, the directories underneath
         it and the namespace entries which are placed. """
@@ -647,25 +606,30 @@ class ImportableDirectory:
 
             for candidate in candidates:
                 compiledFile = self.compiledFiles[candidate]
-                try:
-                    compiledFile.Actualize(path)
-                except Exception, e:
-                    errors += 1
+                if self.ProcessCompiledFile(path, candidate, compiledFile):
+                    self.bootStrapOrder.append(candidate)
+                    candidates.remove(candidate)
 
-                    sys.stderr.write("%s in %s\n"%(e.__class__.__name__, candidate))
-                    lines = traceback.format_exception_only(e.__class__, e)
-                    for line in lines:
-                        sys.stderr.write(line.replace('File "<string>"', 'File %s'%(compiledFile.filePath)))
+    def ProcessCompiledFile(self, path, filePath, compiledFile):
+        try:
+            compiledFile.Actualize(path)
+        except Exception, e:
+            errors += 1
 
-                    sys.exc_clear()
-                    continue
+            sys.stderr.write("%s in %s\n"%(e.__class__.__name__, filePath))
+            lines = traceback.format_exception_only(e.__class__, e)
+            for line in lines:
+                sys.stderr.write(line.replace('File "<string>"', 'File %s' % compiledFile.filePath))
 
-                self.bootStrapOrder.append(candidate)
-                if VERBOSE:
-                    print "Exporting:", compiledFile.filePath
+            sys.exc_clear()
+            return False
 
-                self.mgr.ProcessCompiledFile(compiledFile)
-                candidates.remove(candidate)
+        if VERBOSE:
+            print "Exporting:", compiledFile.filePath
+
+        self.mgr.ProcessCompiledFile(compiledFile)
+        return True
+
 
 class CompiledFile:
     def __init__(self, filePath = None, namespace=None):

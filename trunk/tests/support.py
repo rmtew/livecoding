@@ -46,6 +46,10 @@ class MonkeyPatcher(object):
         v = self.dirTree
         bits = path.split(os.path.sep)
         for bit in bits:
+            if not v.has_key(bit):
+                e = IOError(2, "No such file or directory")
+                e.filename = path
+                raise e
             v = v[bit]
         return v
 
@@ -53,6 +57,16 @@ class MonkeyPatcher(object):
         dirPath, fileName = os.path.split(path)
         v = self.GetDirectoryEntry(dirPath)
         v[fileName] = contents
+
+    def RemoveDirectoryEntry(self, path):
+        d = self.dirTree
+        dirPath, fileName = os.path.split(path)
+        dirBits = dirPath.split(os.path.sep)
+
+        for bit in dirBits:
+            d = d[bit]
+
+        del d[fileName]
 
     # Monkeypatched functions.
 
@@ -73,6 +87,14 @@ class MonkeyPatcher(object):
         "os.path.isdir"
         v = self.GetDirectoryEntry(path)
         return type(v) == types.DictType
+
+    def MP_os_path_exists(self, path):
+        "os.path.exists"
+        try:
+            self.GetDirectoryEntry(path)
+            return True
+        except IOError:
+            return False
 
     def MP_open(self, path):
         "__builtin__.open"

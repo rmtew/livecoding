@@ -1,0 +1,10 @@
+
+- Documentation.
+
+Need to flesh out the README file.
+Need to update the wiki.
+
+- The 'filechanges' library.
+
+Need to add stackless support.  Probably best to do this through a
+StacklessCodeManager class in livecoding.

@@ -29,7 +29,8 @@ namespace 'server' in this manner:
 
 {{{
   import livecoding
-  livecoding.AddDirectory("stuff", "server")
+  cm = livecoding.CodeManager()
+  cm.AddDirectory("stuff", "server")
 }}}
   
 Now this will result in a 'services' submodule for 'server' and the contents
@@ -104,8 +105,9 @@ These files provide the same classes as in the previous example.  Next both
 
 {{{
   import livecoding
-  livecoding.AddDirectory("stuff1", "server")
-  livecoding.AddDirectory("stuff2", "server")
+  cm = livecoding.CodeManager()
+  cm.AddDirectory("stuff1", "server")
+  cm.AddDirectory("stuff2", "server")
 }}}
 
 And it is still possible to do the following:
