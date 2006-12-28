@@ -4,7 +4,7 @@ directory with this library, the contents of that directory are directly
 mapped to the import namespace.  These examples should illustrate how this
 works in practice.
 
-*Note:* This document needs to be restructured.  See this issue.
+*Note:* This document needs to be restructured.  See [http://code.google.com/p/livecoding/issues/detail?id=1 this issue].
 
 === Example 1: One file in a subdirectory ===
 
