@@ -1,0 +1,52 @@
+#labels Featured
+Overrides are just a way to dynamically intercept when a function in
+any instance of a given class is called, and to be able to incorporate
+some other arbitary code to be either executed in place of the original
+function or combined with it in some manner.
+
+=== The inline approach ===
+
+The easiest approach to various types of logging, whether general
+information of interest, or to account for where cpu time is spent or
+whatever, is the imperative approach.  Littering the code with inline
+statements, the purpose of which is often forgotten, and the statements
+remaining until they are removed on a whim at some later date.  Some
+common examples follow.
+
+Designating that time spent in specific functions should be specially
+counted under specific time usage labels.
+
+{{{
+  def SendMessage(self, srcID, dstID, msg):
+      # Clock the cpu time spent in the following function up to the
+      # given label.
+      TrackCpu("message sending", self.SendMessage_, srcID, dstID, msg)
+      
+  def SendMessage_(self, srcID, dstID, msg):
+      # ... body of function ...
+}}}
+
+Logging information about when a function is entered, arguments of interest
+and when it is exited.
+
+{{{
+  def ProcessEvent(self, itemID, typeID, quantity):
+      logging.log(INFO, "ProcessEvent entered: %s %s %s" % itemID, typeID, quantity)
+      
+      # ... body of function ...
+      
+      logging.log(INFO, "ProcessEvent exited")      
+}}}
+
+One downside of this approach is that if the amount of logging or the way in
+which it is done is a detriment to the running of the application, the
+application most likely needs to be taken down and the code updated with
+the logging removed.
+
+And another downside mentioned earlier above is that it is easy to lose track
+of all the many places different information is logged throughout a code base.
+
+=== The override approach ===
+
+TBD.
+
