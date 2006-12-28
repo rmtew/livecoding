@@ -38,6 +38,16 @@ and when it is exited.
       logging.log(INFO, "ProcessEvent exited")      
 }}}
 
+Providing call stacks in case of unexpected occurances in order to provide
+context about why they are happening.
+
+{{{
+  def HandleSomething(self, *args, **kwargs):
+      ...
+      if ... some check for unexpected circumstance ...:
+          LogTraceback()
+}}}
+
 One downside of this approach is that if the amount of logging or the way in
 which it is done is a detriment to the running of the application, the
 application most likely needs to be taken down and the code updated with
