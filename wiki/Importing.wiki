@@ -1,9 +1,10 @@
 #labels Featured
 The custom importing works in a straightforward manner.  When you register a
 directory with this library, the contents of that directory are directly
-mapped to the import namespace.
+mapped to the import namespace.  These examples should illustrate how this
+works in practice.
 
-These examples should illustrate how this works in practice.
+*Note:* This document needs to be restructured.  See this issue.
 
 === Example 1: One file in a subdirectory ===
 
