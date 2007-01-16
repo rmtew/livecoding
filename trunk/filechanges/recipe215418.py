@@ -81,6 +81,9 @@ def Check(handler, skipEvents=False):
     for path in handler.directories:
         remainingFilesByPath[path] = handler.watchState.get(path, {})
 
+    # Initialise this as it is used later below, and there may be no registered
+    # directories.
+    remaining_files = {}
     handler.watchState = {}
     for path in handler.directories:
         remaining_files = remainingFilesByPath[path]
