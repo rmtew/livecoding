@@ -68,7 +68,6 @@ class CodeManager:
         # Internal file change monitoring.
         self.internalFileMonitoring = detectChanges
         if detectChanges:
-            import filechanges
             # Grabbing a weakref to a method of this instance requires me to
             # hold onto the method as well.
             pr = weakref.ref(self)
@@ -76,6 +75,7 @@ class CodeManager:
             self.internalFileMonitor = self.GetChangeHandler(cb)
 
     def GetChangeHandler(self, cb):
+        import filechanges
         return filechanges.ChangeHandler(cb)
 
     # ------------------------------------------------------------------------
