@@ -70,7 +70,7 @@ class CodeManager:
         if detectChanges:
             # Grabbing a weakref to a method of this instance requires me to
             # hold onto the method as well.
-            pr = weakref.ref(self)
+            pr = weakref.proxy(self)
             cb = lambda *args, **kwargs: pr.ProcessChangedFile(*args, **kwargs)
             self.internalFileMonitor = self.GetChangeHandler(cb)
 
@@ -403,7 +403,7 @@ class CodeManager:
                     continue
                 st.write("%s : %s\n" % (k, v))
             if st.len:
-                sys.stdout.writeline("change (newObject):")
+                sys.stdout.write("change (newObject):\n")
                 st.seek(0, 0)
                 sys.stdout.write(st.getvalue())
 
@@ -414,7 +414,7 @@ class CodeManager:
                         continue
                     st.write("%s : %s\n" % (k, v))
                 if st.len:
-                    sys.stdout.writeline("change (oldObject):")
+                    sys.stdout.write("change (oldObject):\n")
                     st.seek(0, 0)
                     sys.stdout.write(st.getvalue())
 
