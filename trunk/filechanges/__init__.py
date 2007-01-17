@@ -35,14 +35,16 @@ class ChangeHandler:
             self.module.Prepare(self)
 
     def AddDirectory(self, path):
-        self.directories.append(path)
         if self.module:
+            self.directories.append(path)
             self.module.Prepare(self)
         elif self.thread:
-            # Make sure the thread doesn't consider all files in the new
-            # directory to be newly added ones by forcing it to do a reset
-            # instead of a check next.
-            self.thread.queue.put_nowait("RESET")
+            # We only want to add the new directory when we can be sure it
+            # won't interfere with the change detecting thread.
+            self.thread.lock.acquire()
+            self.directories.append(path)
+            self.thread.resetEvent.set()
+            self.thread.lock.release()
 
     def RemoveDirectory(self, path):
         self.directories.remove(path)
@@ -89,7 +91,8 @@ class ChangeThread(threading.Thread):
 
         self.handler = handler
         self.delay = delay
-        self.queue = Queue.Queue()
+        self.resetEvent = threading.Event()
+        self.lock = threading.Lock()
         self.start()
 
     def run(self):
@@ -99,21 +102,17 @@ class ChangeThread(threading.Thread):
 
         try:
             while True:
-                if self.ReceivedReset():
+                self.lock.acquire()
+                if self.resetEvent.isSet():
+                    self.resetEvent.clear()
                     module.Prepare(self.handler)
                 else:
                     module.Check(self.handler)
+                self.lock.release()
+
                 time.sleep(self.delay)
         except ReferenceError:
             pass
-
-    def ReceivedReset(self):
-        # Consume all the pending resets.
-        ret = False
-        while not self.queue.empty():
-            if self.queue.get() == "RESET":
-                ret = True
-        return ret
 
 
 if __name__ == "__main__":
