@@ -38,6 +38,11 @@ class ChangeHandler:
         self.directories.append(path)
         if self.module:
             self.module.Prepare(self)
+        elif self.thread:
+            # Make sure the thread doesn't consider all files in the new
+            # directory to be newly added ones by forcing it to do a reset
+            # instead of a check next.
+            self.thread.queue.put_nowait("RESET")
 
     def RemoveDirectory(self, path):
         self.directories.remove(path)
@@ -84,18 +89,31 @@ class ChangeThread(threading.Thread):
 
         self.handler = handler
         self.delay = delay
+        self.queue = Queue.Queue()
         self.start()
 
     def run(self):
         module = GetFileChangeModule()
         module.Prepare(self.handler)
+        time.sleep(self.delay)
 
         try:
             while True:
-                module.Check(self.handler)
+                if self.ReceivedReset():
+                    module.Prepare(self.handler)
+                else:
+                    module.Check(self.handler)
                 time.sleep(self.delay)
         except ReferenceError:
             pass
+
+    def ReceivedReset(self):
+        # Consume all the pending resets.
+        ret = False
+        while not self.queue.empty():
+            if self.queue.get() == "RESET":
+                ret = True
+        return ret
 
 
 if __name__ == "__main__":

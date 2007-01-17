@@ -83,12 +83,11 @@ def Check(handler, skipEvents=False):
 
     # Initialise this as it is used later below, and there may be no registered
     # directories.
-    remaining_files = {}
     handler.watchState = {}
     for path in handler.directories:
         remaining_files = remainingFilesByPath[path]
         os.path.walk(path, f, (handler, path))
 
-    if not skipEvents:
-        for path in remaining_files.keys():
-            handler.DispatchFileChange(path, deleted=True)
+        if not skipEvents:
+            for path in remaining_files.keys():
+                handler.DispatchFileChange(path, deleted=True)
