@@ -51,7 +51,7 @@ CCSTATE_BUILT       = 3
 #CCSTATE_READY       = 4
 #CCSTATE_INTERACTIVE = 5
 
-VERBOSE = True
+VERBOSE = False
 
 
 class CodeManager:
