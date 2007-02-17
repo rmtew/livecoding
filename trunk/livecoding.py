@@ -611,27 +611,24 @@ class ImportableDirectory:
 
         errors = 0
         while len(candidates):
-            if errors > 100:
-                return
-
             for candidate in candidates:
                 compiledFile = self.compiledFiles[candidate]
                 if self.ProcessCompiledFile(path, candidate, compiledFile):
                     self.bootStrapOrder.append(candidate)
                     candidates.remove(candidate)
+                else:
+                    errors += 1
+            if errors > 100:
+                raise RuntimeError("Failed to find compilation dependencies", path, candidates)
 
     def ProcessCompiledFile(self, path, filePath, compiledFile):
         try:
             compiledFile.Actualize(path)
         except Exception, e:
-            errors += 1
-
             sys.stderr.write("%s in %s\n"%(e.__class__.__name__, filePath))
             lines = traceback.format_exception_only(e.__class__, e)
             for line in lines:
                 sys.stderr.write(line.replace('File "<string>"', 'File %s' % compiledFile.filePath))
-
-            sys.exc_clear()
             return False
 
         if VERBOSE:
