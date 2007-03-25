@@ -290,7 +290,7 @@ class CodeManager:
         if newCompiledFile.codeObject is None:
             return
         try:
-            newCompiledFile.Actualize(filePath)
+            newCompiledFile.Actualize()
         except ImportError, e:
             sys.stderr.write("ImportError in %s\n"%(filePath))
             lines = traceback.format_exception_only(ImportError, e)
@@ -356,6 +356,13 @@ class CodeManager:
                 oldLocals[objectName] = newObject
                 continue
 
+            # Classes which have been recompiled and therefore come from the
+            # changed file, can be identified by their uninitialised module
+            # attribute.  For a class to have a different value than this
+            # indicates that it was imported at the top of the file.
+            if newObject.__module__ != "__builtin__":
+                continue
+
             if oldObject:
                 toDelAttr = []
                 for k, oldV in oldObject.__dict__.iteritems():
@@ -365,7 +372,7 @@ class CodeManager:
                     if VERBOSE:
                         print "removing:",toDelAttr
                     for k in toDelAttr:
-                        del oldObject[k]
+                        del oldObject.__dict__[k]
 
             # Go over the entries in the newly (re)loaded file locals.
             for k, v in newObject.__dict__.iteritems():
@@ -595,7 +602,7 @@ class ImportableDirectory:
                     errors += 1
 
         if errors > 0:
-            CodeCompiler.state = CCSTATE_FAILED
+            CodeManager.state = CCSTATE_FAILED
             sys.stderr.write("Compilation failed: %d errors\n"%(errors))
             return
 
@@ -623,7 +630,7 @@ class ImportableDirectory:
 
     def ProcessCompiledFile(self, path, filePath, compiledFile):
         try:
-            compiledFile.Actualize(path)
+            compiledFile.Actualize()
         except Exception, e:
             sys.stderr.write("%s in %s\n"%(e.__class__.__name__, filePath))
             lines = traceback.format_exception_only(e.__class__, e)
@@ -677,8 +684,7 @@ class CompiledFile:
             self.codeObject = None
             # self.timeStamp = None
 
-    def Actualize(self, path):
-        stripIdx = path.rfind("\\")
+    def Actualize(self):
         # Should we clear self.locals?  Need to think about this.
         eval(self.codeObject, self.locals)
 
