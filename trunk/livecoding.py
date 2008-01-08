@@ -51,7 +51,7 @@ CCSTATE_BUILT       = 3
 #CCSTATE_READY       = 4
 #CCSTATE_INTERACTIVE = 5
 
-VERBOSE = False
+VERBOSE = True
 
 
 class CodeManager:
@@ -241,6 +241,7 @@ class CodeManager:
         if object_name not in all:
             all.append(object_name)
         if hasattr(newValue, "__module__"):
+            # print filePath, object_name, newValue.__module__, (name_space, module.__name__)
             newValue.__module__ = name_space or module.__name__
 
     # ------------------------------------------------------------------------
@@ -700,7 +701,15 @@ class CompiledFile:
                 if hasattr(v, "__module__"):
                     # New classes and new functions respectively.  These will get
                     # a module set when these exports are put in place.
-                    if v.__module__ is None or v.__module__ == "__builtin__":
+                    if v.__module__ is None:
+                        exports[k] = v
+                    elif v.__module__ == "__builtin__":
+                        # A special case.  If a module imports from the 'types'
+                        # module, then we will not be able to identify what
+                        # was imported as not being created locally.  We need
+                        # to check if this is the case and exclude these entries.
+                        if getattr(types, k, None) is v:
+                            continue
                         exports[k] = v
                 #else:
                 #    print "-- UNKNOWN", type(v), k, v, v.__module__, v.__dict__.keys()
