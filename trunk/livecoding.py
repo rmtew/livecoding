@@ -373,7 +373,7 @@ class CodeManager:
                     if VERBOSE:
                         print "removing:",toDelAttr
                     for k in toDelAttr:
-                        del oldObject.__dict__[k]
+                        delattr(oldObject, k)
 
             # Go over the entries in the newly (re)loaded file locals.
             for k, v in newObject.__dict__.iteritems():

@@ -13,6 +13,19 @@ class ClassA:
         return "a1"
 """
 
+aContentsBaseType = """
+class ClassA(type):
+    var = 1
+    def FunctionA(self):
+        return "a1"
+"""
+
+aContentsBaseTypeClassVariableRemoval = """
+class ClassA(type):
+    def FunctionA(self):
+        return "a1"
+"""
+
 aContentsClassVariableRemoval = """
 class ClassA:
     def FunctionA(self):
@@ -157,6 +170,30 @@ class UpdateTestCase(unittest.TestCase):
             self.failUnless(hasattr(ClassB, "var"), "Variable on ClassB (via ClassA) was not removed")
 
             mp.SetFileContents(aFileName, aContentsClassVariableRemoval)
+
+            cm.ProcessChangedFile(aFileName, changed=True)
+
+            self.failUnless(not hasattr(ClassA, "var"), "Variable on ClassA was not removed")
+            self.failUnless(not hasattr(ClassB, "var"), "Variable on ClassB (via super class 'ClassA') was not removed")
+
+    def test_file_update_type_class_variable_removal(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(GetDirectoryStructure())
+            # Substitute a ClassA which inherits from 'type'.
+            mp.SetFileContents(aFileName, aContentsBaseType)
+
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+            cm.AddDirectory("B", "base")
+
+            from base import ClassA
+            from base.C import ClassB
+
+            self.failUnless(hasattr(ClassA, "var"), "Variable on ClassA was not removed")
+            self.failUnless(hasattr(ClassB, "var"), "Variable on ClassB (via ClassA) was not removed")
+
+            # Substitute a ClassA which inherits from 'type' without the variable 'var'.
+            mp.SetFileContents(aFileName, aContentsBaseTypeClassVariableRemoval)
 
             cm.ProcessChangedFile(aFileName, changed=True)
 
