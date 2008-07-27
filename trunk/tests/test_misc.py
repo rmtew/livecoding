@@ -8,12 +8,20 @@ bFileName = os.path.join("B", os.path.join("C", "b.py"))
 
 aContentsBase = """
 class ClassA:
+    var = 1
+    def FunctionA(self):
+        return "a1"
+"""
+
+aContentsClassVariableRemoval = """
+class ClassA:
     def FunctionA(self):
         return "a1"
 """
 
 aContentsFunctionChange = """
 class ClassA:
+    var = 1
     def FunctionA(self):
         return "a2"
 """
@@ -133,6 +141,27 @@ class UpdateTestCase(unittest.TestCase):
             from base.C import ClassB
             b = ClassB()
             self.failUnlessEqual(b.FunctionA(), "a2")
+
+    def test_file_update_class_variable_removal(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(GetDirectoryStructure())
+
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+            cm.AddDirectory("B", "base")
+
+            from base import ClassA
+            from base.C import ClassB
+
+            self.failUnless(hasattr(ClassA, "var"), "Variable on ClassA was not removed")
+            self.failUnless(hasattr(ClassB, "var"), "Variable on ClassB (via ClassA) was not removed")
+
+            mp.SetFileContents(aFileName, aContentsClassVariableRemoval)
+
+            cm.ProcessChangedFile(aFileName, changed=True)
+
+            self.failUnless(not hasattr(ClassA, "var"), "Variable on ClassA was not removed")
+            self.failUnless(not hasattr(ClassB, "var"), "Variable on ClassB (via super class 'ClassA') was not removed")
 
     def test_file_addition_bad(self):
         with support.MonkeyPatcher() as mp:
