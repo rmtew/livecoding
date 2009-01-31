@@ -1,0 +1,311 @@
+- Writing depth-first directory walker.
+- Have it add the contents of a given directory to a base namespace.
+- Reading in and compiling .py files found.
+- Create the current namespace if it doesn't exist.
+  - Design decision not to override existing modules.
+- Executing the compiled bytecode.
+- Iterating over all the objects created by the script.
+  - Skipping the irrelevant objects (don't want to export them to the new namespace).
+    - "__builtins__"
+  - Setting the "__module__" attribute on classes to the name of the module they will be placed in.
+- Placing them in the namespace.
+- Can now import them.
+
+
+A custom namespacing system
+===========================
+
+The standard Python package system
+----------------------------------
+
+The Python module system works in a certain defined way.  An '__init__.py' file needs to be placed in a module directory.  Other Python files within the module directory need to be imported by name, and their contents are available under that name.
+
+Let's say there's a directory named 'mymodule' with the compulsory '__init__.py' in it.  There's also a 'myfile.py' there and it has a class 'MyClass' within it.  In order to access 'MyClass', 'mymodule.myfile' needs to be imported and then the class can be accessed as an attribute on it.
+
+{{{
+import mymodule.myfile
+myInstance = mymodule.myfile.MyClass()
+}}}
+
+Boilerplate code can be placed within '__init__.py' to make 'MyClass' accessible from 'mymodule' directly.  One way this can be done is by importing 'myfile' and getting 'MyClass' from it.
+
+{{{
+# The contents of __init__.py
+from myfile import MyClass
+}}}
+
+Now 'MyClass' can be imported as directly from 'mymodule'.
+{{{
+from mymodule import MyClass
+myInstance = MyClass()
+
+import mymodule
+myInstance = mymodule.MyClass()
+}}}
+
+The Python documentation calls this system of structuring module directories [packages].
+http://docs.python.org/tutorial/modules.html#packages
+But sometimes you want something simpler.  A way of placing code in files which is directly importable in a manner you might prefer.  Me, often I don't care what files are in a directory, I just want their contents lumped in a straightforward namespace which maps to the directory structure.
+
+A directory based namespacing system
+------------------------------------
+
+One way to go about implementing a custom system like this, would be to specify a base module name and a script directory, with the intent that the contents of that directory get placed into a namespace above that base module.  This is the system I am going to implement.
+
+Here's an example script directory which would be used with this system:
+{{{
+scripts/fileA.py
+scripts/things/fileB.py
+scripts/things/fileC.py
+}}}
+
+'fileA.py' contains the following code:
+{{{
+class Alpha: pass
+}}}
+
+'fileB.py' contains the following code:
+{{{
+class Beta: pass
+}}}
+
+'fileC.py' contains the following code:
+{{{
+class Gamma: pass
+}}}
+
+Given a base module name of 'game', this would generate the following namespace:
+{{{
+game
+game.things
+}}}
+
+The module 'game' then contains the class 'Alpha' from 'fileA.py'. And the module 'game.things' the class 'Beta' from 'fileB.py' and the class 'Gamma' from 'fileC.py'.
+
+Step 1: Locating the files
+
+The first step is to write a function to recursive walk through a directory tree.
+{{{
+def LoadDirectory(dirPath):
+    for entryName in os.listdir(dirPath):
+        entryPath = os.path.join(dirPath, entryName)
+        if os.path.isdir(entryPath):
+            LoadDirectory(entryPath)
+        elif os.path.isfile(entryPath):
+            if entryName.endswith(".py"):
+                LoadScript(entryPath)
+}}}
+
+The script loading should read in the given Python script.
+{{{
+script = open(filePath, 'r').read()
+}}}
+
+Compile it as an executable sequence of statements.
+{{{
+codeObject = compile(script, filePath, "exec")
+}}}
+
+Execute it to generate the objects the code define.
+{{{
+scriptGlobals = {}
+eval(codeObject, scriptGlobals, scriptGlobals)
+}}}
+
+Giving the 'LoadScript' function.
+{{{
+def LoadScript(filePath):
+    script = open(filePath, 'r').read()
+    codeObject = compile(script, filePath, "exec")
+    scriptGlobals = {}
+    eval(codeObject, scriptGlobals, scriptGlobals)
+    return scriptGlobals
+}}}
+
+Now when the Python script is compiled and executed, a global dictionary 'scriptGlobals' is supplied.  The script executes using that global dictionary, and anything the script assigns, results as variables within it.  Given the namespace object the script file was supposed to contribute to, all these variables created by it could be placed in that namespace and we'd be done.
+
+So given an absolute script path 'entryPath' that script would be loaded.
+{{{
+scriptGlobals = LoadScript(entryPath)
+}}}
+
+And given a namespace path 'namespacePath' (like for instance 'game.things') the corresponding module object could be obtained, or created if needed.
+{{{
+module = GetNamespaceModule(namespacePath)
+}}}
+
+Then the attributes from the script globals could be transferred over to the namespace module object.
+{{{
+InsertModuleAttributes(scriptGlobals, module)
+}}}
+
+The namespace path is easily obtained.  It is the same for all scripts located within the same directory.  The base namespace name is combined with the relative path of the script file from the base script directory to make it.
+
+Given the base script directory of "scripts" and the base namespace name of "game", the file "scripts/fileA.py" has the namespace path of 'game'.  And the file "scripts/things/fileB.py" has the namespace path of 'game.things'.
+
+So building the namespace path for a given directory can be done like this.
+{{{
+namespacePath = baseNamespacePath
+relativeDirPath = os.path.relpath(dirPath, baseDirPath)
+if relativeDirPath != ".":
+    namespacePath += "."+ relativeDirPath.replace(os.path.sep, ".")
+}}}
+
+Combining all the pieces so far results in 'LoadDirectory' looking something like the following.
+{{{
+def LoadDirectory(dirPath):
+    namespacePath = baseNamespacePath
+    relativeDirPath = os.path.relpath(dirPath, baseDirPath)
+    if relativeDirPath != ".":
+        namespacePath += "."+ relativeDirPath.replace(os.path.sep, ".")
+
+    for entryName in os.listdir(dirPath):
+        entryPath = os.path.join(dirPath, entryName)
+        if os.path.isdir(entryPath):
+            LoadDirectory(entryPath)
+        elif os.path.isfile(entryPath):
+            if entryName.endswith(".py"):
+                scriptGlobals = LoadScript(entryPath)
+                module = GetNamespaceModule(namespacePath)
+                InsertModuleAttributes(scriptGlobals, module)
+}}}
+
+The namespace creation is fairly simple, but there are of course things that can go wrong.
+* If one of our modules is inserted into 'sys.modules', where the importer looks for loaded modules, it will be imported when its name is given to the importer.  If the module name also happens to be the name of a standard library module, that standard library module can no longer be imported and anyone who asks for it will get our module.
+* If a normal Python module is already imported and its name corresponds to one of our namespace names, and we grab it to insert our script globals into, we're now polluting that namespace.  The official term for this is 'module shitting'.
+
+As a wise man once said, don't cross the streams.
+
+The best approach to take is to raise an error during the namespace creation process if one of these situations is going to occur.  This is a user error, and if the user doesn't understand where their namespaces are going, they're not doing this right.
+
+'sys.modules' cannot be used as an index of the created namespaces so a custom index is needed.
+{{{
+namespaces = {}
+}}}
+
+If a custom namespace has already been created, then it is okay to use directly.
+{{{
+module = namespaces.get(namespacePath, None)
+if module is not None:
+    return module
+}}}
+
+If the namespace path is in 'sys.modules' but wasn't in the custom index, then to put something in there would be module shitting.
+{{{
+if namespacePath in sys.modules:
+    raise RuntimeError("Module shitting", namespacePath)
+}}}
+
+A namespace path may be many levels deep.  The sub-modules should be recursively built before this child module can be created and added.
+{{{
+parts = namespaceName.rsplit(".", 1)
+if len(parts) == 2:
+    baseNamespaceName, moduleName = parts
+    baseNamespace = GetNamespaceModule(baseNamespaceName)
+else:
+    baseNamespaceName, moduleName = None, parts[0]
+    baseNamespace = None
+}}}
+
+Now either the code has errored because of module shitting, or the parent module has been obtained.  The module for this namespace path can be created.
+{{{
+module = imp.new_module(moduleName)
+}}}
+
+Its name needs to be set.
+{{{
+module.__name__ = moduleName
+}}}
+
+And the file it comes from.  But in our case, there is no file, as all files in a directory contribute to it.  So the file name is set to a placeholder that can be recognised.
+{{{
+module.__file__ = "DIRECTORY("+ namespaceName +")"
+}}}
+
+The module is registered in the custom index.
+{{{
+namespaces[namespaceName] = module
+}}}
+
+And also in 'sys.modules', after which it is importable.
+{{{
+sys.modules[namespaceName] = module
+}}}
+
+The module needs to be accessible as an attribute of its parent module.
+{{{
+if baseNamespace is not None:
+    setattr(baseNamespace, moduleName, module)
+}}}
+
+Which gives the function 'GetNamespaceModule'.
+{{{
+def GetNamespaceModule(self, namespaceName):
+    module = namespaces.get(namespaceName, None)
+    if module is not None:
+        return module
+
+    if namespaceName in sys.modules:
+        raise RuntimeError("Namespace already exists", namespaceName)
+
+    parts = namespaceName.rsplit(".", 1)
+    if len(parts) == 2:
+        baseNamespaceName, moduleName = parts
+        baseNamespace = GetNamespaceModule(baseNamespaceName)
+    else:
+        baseNamespaceName, moduleName = None, parts[0]
+        baseNamespace = None
+
+    module = imp.new_module(moduleName)
+    module.__name__ = moduleName
+    # Our modules don't map to files.  Have a placeholder.
+    module.__file__ = "DIRECTORY("+ namespaceName +")"
+
+    namespaces[namespaceName] = module
+    sys.modules[namespaceName] = module
+
+    if baseNamespace is not None:
+        setattr(baseNamespace, moduleName, module)
+
+    return module
+}}}
+
+The final step is inserting script globals into a namespace module.  This is a simple matter of copying the attributes in the script globals over to the module.
+
+The script globals directory automatically had a '__builtins__' reference added to it when the code was executed.  This should be ignored.
+{{{
+if k == "__builtins__":
+    continue
+}}}
+
+And any classes copied over need to have their '__module__' attribute set to the module name.
+{{{
+if type(v) is types.ClassType or type(v) is types.TypeType:
+    v.__module__ = namespace.__name__
+}}}
+
+Which gives the function 'InsertModuleAttributes'.
+{{{
+def InsertModuleAttributes(attributes, namespace):
+    moduleName = namespace.__name__
+
+    for k, v in attributes.iteritems():
+        if k == "__builtins__":
+            continue
+
+        if type(v) is types.ClassType or type(v) is types.TypeType:
+            v.__module__ = moduleName
+
+        logging.info("InsertModuleAttribute "+ k +" "+ namespace.__file__)
+        setattr(namespace, k, v)
+}}}
+
+Now after executing the following it should be possible to import from the custom namespaces.
+{{{
+baseNamespacePath = "game"
+baseDirPath = os.path.join(sys.path[0], "scripts")
+LoadDirectory(baseDirPath)
+
+from game.things import Beta, Gamma
+from game import Alpha
+}}}
