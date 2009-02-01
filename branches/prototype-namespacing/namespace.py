@@ -8,23 +8,30 @@ import types
 import logging
 
 class ScriptDirectory:
-    def __init__(self, baseDirPath, baseNamespace):
-        self.baseDirPath = baseDirPath
-        self.baseNamespace = baseNamespace
-
+    def __init__(self, baseDirPath=None, baseNamespace=None):
         self.filesByPath = {}
         self.filesByDirectory = {}
         self.namespaces = {}
-        
-        self.LoadDirectory(baseDirPath)
+
+        self.SetBaseDirectory(baseDirPath)
+        self.SetBaseNamespaceName(baseNamespace)
 
     def __del__(self):
         pass
 
+    def SetBaseDirectory(self, baseDirPath):
+        self.baseDirPath = baseDirPath
+
+    def SetBaseNamespaceName(self, baseNamespaceName):
+        self.baseNamespaceName = baseNamespaceName
+
+    def Load(self):
+        self.LoadDirectory(self.baseDirPath)
+
     def LoadDirectory(self, dirPath):
         logging.info("LoadDirectory %s", dirPath)
 
-        namespace = self.baseNamespace
+        namespace = self.baseNamespaceName
         relativeDirPath = os.path.relpath(dirPath, self.baseDirPath)
         if relativeDirPath != ".":
             namespace += "."+ relativeDirPath.replace(os.path.sep, ".")
@@ -123,6 +130,7 @@ if __name__ == "__main__":
     path = sys.path[0]
     dirPath = os.path.join(path, "script-hierarchy")
     gameScripts = ScriptDirectory(dirPath, "game")
+    gameScripts.Load()
     
     import game
     game.Alpha

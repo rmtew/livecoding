@@ -14,7 +14,8 @@ class CustomNamespaceTests(unittest.TestCase):
         pass
 
     def testXXX(self):
-        pass
+        sd = namespace.ScriptDirectory()
+
 
 if __name__ == "__main__":
     unittest.main()
