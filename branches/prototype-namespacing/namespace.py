@@ -22,7 +22,7 @@ class ScriptDirectory:
         pass
 
     def LoadDirectory(self, dirPath):
-        logging.info("LoadDirectory "+ dirPath)
+        logging.info("LoadDirectory %s", dirPath)
 
         namespace = self.baseNamespace
         relativeDirPath = os.path.relpath(dirPath, self.baseDirPath)
@@ -30,6 +30,9 @@ class ScriptDirectory:
             namespace += "."+ relativeDirPath.replace(os.path.sep, ".")
 
         for entryName in os.listdir(dirPath):
+            if entryName == ".svn":
+                continue
+
             entryPath = os.path.join(dirPath, entryName)
             if os.path.isdir(entryPath):
                 self.LoadDirectory(entryPath)
@@ -45,7 +48,7 @@ class ScriptDirectory:
                         self.filesByDirectory[relativeDirPath] = []
                     self.filesByDirectory[relativeDirPath].append(scriptFile)
             else:
-                logging.error("Unrecognised directory entry: "+ entryPath)
+                logging.error("Unrecognised type of directory entry %s", entryPath)
 
     def CreateNamespace(self, namespaceName):
         module = self.namespaces.get(namespaceName, None)
@@ -77,7 +80,7 @@ class ScriptDirectory:
         return module
 
     def LoadScript(self, filePath, namespacePath):
-        logging.info("LoadFile "+ filePath)
+        logging.info("LoadScript %s", filePath)
 
         scriptFile = ScriptFile(filePath)
         namespace = self.CreateNamespace(namespacePath)
@@ -95,7 +98,7 @@ class ScriptDirectory:
             if type(v) is types.ClassType or type(v) is types.TypeType:
                 v.__module__ = moduleName
 
-            logging.info("InsertModuleAttribute "+ k +" "+ namespace.__file__)
+            logging.info("InsertModuleAttribute %s %s", k, namespace.__file__)
             setattr(namespace, k, v)
 
 

@@ -2,9 +2,11 @@ import unittest
 import sys
 import logging
 
+import namespace
+
 logging.basicConfig(level=logging.INFO)
 
-class XTest(unittest.TestCase):
+class CustomNamespaceTests(unittest.TestCase):
     def setUp(self):
         pass
 
@@ -15,8 +17,4 @@ class XTest(unittest.TestCase):
         pass
 
 if __name__ == "__main__":
-    path = sys.path[0]
-    print path
-    import namespace
-    namespace.DirectoryManager(path)
-    # unittest.main()
+    unittest.main()
