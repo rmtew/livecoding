@@ -1,6 +1,10 @@
 # TODO:
-# - When garbage collected the namespaces created should be removed cleanly.
-# - Determine a better value for 'module.__file__' when a namespace is created.
+# - DestroyNamespace may be a little enthusiastic.  Should check the contents
+#   of a namespace which is presumed to be clean, before deleting it.  If there
+#   is something left, then do the appropriate thing.
+# - The namespace contributions can only come from one ScriptDirectory.
+#   - __file__ might be made shorter and clearer by using paths relative to
+#     the base directory.
 
 import os
 import sys
@@ -21,7 +25,16 @@ class ScriptDirectory:
         self.SetBaseNamespaceName(baseNamespace)
 
     def __del__(self):
-        pass
+        logging.info("Cleaning up after removed directory '%s'", self.baseDirPath)
+        for scriptFile in self.filesByPath.itervalues():
+            self.UnloadScript(scriptFile)
+
+        namespacePaths = self.namespaces.keys()
+        namespacePaths.sort()
+        namespacePaths.reverse()
+        
+        for namespacePath in namespacePaths:
+            self.DestroyNamespace(namespacePath)
 
     def SetBaseDirectory(self, baseDirPath):
         self.baseDirPath = baseDirPath
@@ -76,14 +89,7 @@ class ScriptDirectory:
             elif os.path.isfile(entryPath):
                 if entryName.endswith(".py"):
                     scriptFile = self.LoadScript(entryPath, namespace)
-
-                    # Index the file by its full path.
-                    self.filesByPath[entryPath] = scriptFile
-                    
-                    # Index the file with other files in the same directory.
-                    if relativeDirPath not in self.filesByDirectory:
-                        self.filesByDirectory[relativeDirPath] = []
-                    self.filesByDirectory[relativeDirPath].append(scriptFile)
+                    self.RegisterScript(scriptFile)
             else:
                 logging.error("Unrecognised type of directory entry %s", entryPath)
 
@@ -106,7 +112,7 @@ class ScriptDirectory:
         module = imp.new_module(moduleName)
         module.__name__ = moduleName
         # Our modules don't map to files.  Have a placeholder.
-        module.__file__ = "DIRECTORY("+ namespaceName +")"
+        module.__file__ = ""
         module.__package__ = baseNamespaceName
 
         self.namespaces[namespaceName] = module
@@ -116,6 +122,31 @@ class ScriptDirectory:
             setattr(baseNamespace, moduleName, module)
 
         return module
+
+    def DestroyNamespace(self, namespaceName):
+        module = self.namespaces.get(namespaceName, None)
+        if module.__file__:
+            logging.info("DestroyNamespace '%s' skipping, still used %s", namespaceName, module.__file__)
+            return
+
+        logging.info("DestroyNamespace '%s'", namespaceName)
+        del sys.modules[namespaceName]
+
+    def RegisterScript(self, scriptFile):
+        # Index the file by its full path.
+        self.filesByPath[scriptFile.filePath] = scriptFile
+
+        dirPath = os.path.dirname(scriptFile.filePath)
+        relativeDirPath = os.path.relpath(dirPath, self.baseDirPath)
+
+        # Index the file with other files in the same directory.
+        if relativeDirPath not in self.filesByDirectory:
+            self.filesByDirectory[relativeDirPath] = []
+        self.filesByDirectory[relativeDirPath].append(scriptFile)
+
+    def FindScript(self, filePath):
+        if filePath in self.filesByPath:
+            return self.filesByPath[filePath]
 
     def LoadScript(self, filePath, namespacePath):
         logging.info("LoadScript %s", filePath)
@@ -132,14 +163,25 @@ class ScriptDirectory:
         logging.info("RunScript:Ran '%s'", scriptFile.filePath)
 
         namespace = self.CreateNamespace(scriptFile.namespacePath)
-        self.InsertModuleAttributes(scriptFile.scriptGlobals, namespace)
+        self.InsertModuleAttributes(scriptFile, namespace)
 
         return True
 
-    def InsertModuleAttributes(self, attributes, namespace):
-        moduleName = namespace.__name__
+    def UnloadScript(self, scriptFile):
+        namespace = self.CreateNamespace(scriptFile.namespacePath)
+        self.RemoveModuleAttributes(scriptFile, namespace)
 
-        for k, v in attributes.iteritems():
+    def InsertModuleAttributes(self, scriptFile, namespace):
+        moduleName = namespace.__name__
+        
+        # Track what files have contributed to the namespace.
+        if scriptFile.filePath not in namespace.__file__:
+            if len(namespace.__file__):
+                namespace.__file__ += ";"
+            namespace.__file__ += scriptFile.filePath
+
+        contributedAttributes = []
+        for k, v in scriptFile.scriptGlobals.iteritems():
             if k == "__builtins__":
                 continue
 
@@ -154,13 +196,35 @@ class ScriptDirectory:
                     continue
 
                 v.__module__ = moduleName
+                v.__file__ = scriptFile.filePath
+
+            # Never overwrite.  Ignore duplicate contributions.
+            if hasattr(namespace, k):
+                logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
+                continue
 
             logging.info("InsertModuleAttribute %s.%s", moduleName, k)
             setattr(namespace, k, v)
+            contributedAttributes.append(k)
+
+        scriptFile.SetContributedAttributes(contributedAttributes)
+
+    def RemoveModuleAttributes(self, scriptFile, namespace):
+        logging.info("RemoveModuleAttributes %s", scriptFile.filePath)
+
+        paths = namespace.__file__.split(";")
+        if scriptFile.filePath not in paths:
+            raise RuntimeError("Namespace mismatch")
+        paths.remove(scriptFile.filePath)
+        namespace.__file__ = ";".join(paths)
+
+        for k in scriptFile.contributedAttributes:
+            delattr(namespace, k)
 
 
 class ScriptFile:
     lastError = None
+    contributedAttributes = None
 
     def __init__(self, filePath, namespacePath):
         self.filePath = filePath
@@ -169,6 +233,9 @@ class ScriptFile:
         self.scriptGlobals = {}
 
         self.Load(filePath)
+
+    def __repr__(self):
+        return "<ScriptFile filePath='%s' namespacePath='%s'>" % (self.filePath, self.namespacePath)
 
     def Load(self, filePath):
         self.filePath = filePath
@@ -185,6 +252,9 @@ class ScriptFile:
             return False
 
         return True
+
+    def SetContributedAttributes(self, contributedAttributes):
+        self.contributedAttributes = contributedAttributes
 
     def LogLastError(self, flush=True):
         if self.lastError is None:
