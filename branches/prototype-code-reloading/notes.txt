@@ -1,0 +1,76 @@
+Remove title: Implementing code reloading
+
+This post continues on from <a href="/2009/02/custom-namespacing-system-for-python_03.html">A custom namespacing system for Python, part 2</a>.
+
+<span style="font-weight:bold;">Code reloading</span>
+
+There are many situations where it is useful to be able to update the code an application is using while it is running.  Some of the most common are when:<ul><li>A service is being provided by the application and interruption to that service for its users is undesirable.</li><li>Starting up the application takes an excessive amount of time and modifying its behaviour without restarting it can allow for more productive development.</li><li>The state which the application maintains is built up after it was started, and the ability to modify behaviour of the application without restarting it allows interaction with the accumulated state.</li></ul>The obvious way to implement the process of code reloading is to take new versions of objects from a changed file and replace the existing versions which were taken from the file before it changed.  This approach will be explored first.
+
+<span style="font-weight:bold;">Code reloading through overwriting</span>
+
+With the <a href="http://code.google.com/p/livecoding/source/browse/branches/prototype-namespacing/">custom namespacing system</a> previously created, a script file can be loaded and its contents placed into a given namespace.
+
+First a script needs to be loaded.<pre name="code" class="python">scriptFile = LoadScript("scripts\example.py", "game")</pre>Next the script is run, placing its contents into the given namespace.<pre name="code" class="python">RunScript(scriptFile)</pre>This can easily be hooked up to file change events.<pre name="code" class="python">def OnFileChanged(filePath):
+    scriptFile = LoadScript("scripts\example.py", "game")
+    RunScript(scriptFile)</pre>A simple overwriting code reloading system can be implemented by repeating this process every time a file changes, which is exactly what would happen if there were actually a file change event hooked up in the manner shown. In response to a file change, the previously created objects from before the change are overwritten by the newly created versions from the freshly changed file.
+
+<span style="font-weight:bold;">Overwriting functions</span>
+
+If each time a function is called it is accessed via the namespace, the newest version of the function will be the one which is called.  This makes sense, as this is the whole point of the overwriting process which happens on a reload.  If a programmer wants to keep calling the same version of the function and not start calling new versions as they get put in place, they need to keep their own reference to the function to call, avoiding use of the namespace.
+
+<span style="font-weight:bold;">Overwriting classes</span>
+
+Let's try a few things.  To start with, assume that "example.py" provides a base class called <code>BaseObject</code>.<pre name="code" class="python">class BaseObject:
+    def PrintClassName(self):
+        print self.__class__.__name__ +" (original)"</pre>If there a class is defined, it is likely that at some point that class will be instantiated.<pre name="code" class="python">import game
+baseObjectBeforeReload = game.BaseObject()</pre>At some point "example.py" is changed, specifically the <code>BaseObject</code> class, triggering a reload. This is the new version of the class:<pre name="code" class="python">class BaseObject:
+    def PrintClassName(self):
+        print self.__class__.__name__ +" (reloaded)"</pre>Now the namespace entry <code>game.BaseObject</code> will be a new class with the old version overwritten.  And since the previously created instance <code>baseObjectBeforeReload</code> was created from the old version of the class, it will still be using that old version of the class.
+
+Executing this code:<pre name="code" class="python">baseObjectAfterReload = game.BaseObject()
+print baseObjectAfterReload.__class__ is not baseObjectBeforeReload.__class__
+baseObjectBeforeReload.PrintClassName()
+baseObjectAfterReload.PrintClassName()</pre>Gives this output:<pre name="code" class="python">False
+"BaseObject (original)"
+"BaseObject (reloaded)"</pre>For certain applications, this might be a desirable result.  It won't update the behaviour of existing instances which are in use within the application, but it will give a different behaviour for new instances created from the newer classes.  If a programmer still wants to create instances from older versions of the class, they can do so by taking a reference to the class from the namespace before a reload has happened and the processing of a changed file has overwritten it.
+
+<span style="font-weight:bold;">Limitations to naive class overwriting</span>
+
+However, things get more complicated when inheritance is involved.  For the purposes of illustration, here are two classes, <code>BaseObject</code> and its subclass <code>Object</code>.
+
+In the file "example1.py", <code>BaseObject</code> is defined:<pre name="code" class="python">class BaseObject:
+    def TokenFunction(self):
+        print "TokenFunction called"</pre>In the file "example2.py", <code>Object</code> inherits from <code>BaseObject</code>:<pre name="code" class="python">import game
+
+class Object(game.BaseObject):
+    def TokenFunction(self):
+    	game.BaseObject.TokenFunction(self)</pre>There are two things to note about the <code>Object</code> class:<ul><li><code>Object.__class__</code> is a direct reference to the whatever <code>game.BaseObject</code> was when the class was loaded.</li><li><code>game.BaseObject</code> in <code>TokenFunction</code> is obtained when the function is executed, this means it is not guaranteed to be the same class as <code>Object.__class__</code>.</li></ul>When these two classes differ, calling <code>TokenFunction</code> will cause the following error:<pre>TypeError: unbound method TokenFunction() must be called with
+BaseObject instance as first argument (got Object instance instead)</pre>This is the primary limitation in the overwriting approach.  If this approach is used, then a subclass can never refer to its base class through a namespace reference.  It needs to do so through a reference to a version of the base class which won't change.  <code>self.__class__.__bases__[0]</code> fits the bill, but using it each time is too unwieldy, and it is easier to store a reference to the version of the class used.<pre name="code" class="python">import game
+BaseObject = game.BaseObject
+
+class Object(BaseObject):
+    def TokenFunction(self):
+    	BaseObject.TokenFunction(self)</pre>If a programmer can live with this limitation and does not find the need to keep track of the older references too cumbersome, this form of naive overwriting might be more than sufficient.  But to be realistic, this requirement is too impractical to work with.
+
+<span style="font-weight:bold;">Overwriting classes "intelligently"</span>
+
+By extending the reloading process it may be possible to remove the need to keep track of those older references.  When a class is updated, all the subclasses which inherit the old version need to be updated to be compatible with the new version.  The base classes of a subclass can be found in the <code>__bases__</code> attribute of the subclass.  If the reference to the old version of a reloaded class in this attribute is replaced with a reference to the new version, then the above error does not occur.
+
+This can be done in the following manner:<pre name="code" class="python">import gc, types
+for ob1 in gc.get_referrers(oldBaseObjectClass):
+    # Class '__bases__' references are stored in a tuple.
+    if type(ob1) is tuple:
+	for ob2 in gc.get_referrers(ob1):
+	    if type(ob2) in (types.ClassType, types.TypeType):
+		if ob2.__bases__ is ob1:
+		    __bases__ = list(ob2.__bases__)
+		    idx = __bases__.index(oldBaseObjectClass)
+		    __bases__[idx] = game.BaseObject
+		    ob2.__bases__ = tuple(__bases__)</pre>But the opposite case is now a problem.  If existing references to the old version of the class are stored directly before the reload and used after it, the error can still occur.
+
+This approach can be further extended to cover additional cases, like replacing references to the old class in global dictionaries, but there are references which cannot be replaced.  This still leaves the burden on the programmer having to know what cases they need to avoid, in order for this code reloading solution to be workable.
+
+<span style="font-weight:bold;">Other approaches</span>
+
+As shown, the overwriting approach is not a practical one.  Some other approach needs to be taken.
+
