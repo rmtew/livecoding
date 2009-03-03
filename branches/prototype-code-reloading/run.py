@@ -18,6 +18,7 @@ import reloader
 
 class CodeReloadingTests(unittest.TestCase):
     mockedNamespaces = None
+    codeReloader = None
 
     def setUp(self):
         pass
@@ -29,6 +30,10 @@ class CodeReloadingTests(unittest.TestCase):
                 moduleNamespace, attributeName = namespacePath.rsplit(".", 1)
                 module = __import__(moduleNamespace)
                 setattr(module, attributeName, replacedValue)
+
+        if self.codeReloader is not None:
+            for dirPath in self.codeReloader.directoriesByPath.keys():
+                self.codeReloader.RemoveDirectory(dirPath)
 
     def InsertMockNamespaceEntry(self, namespacePath, replacementValue):
         if self.mockedNamespaces is None:
@@ -57,6 +62,8 @@ class CodeReloadingTests(unittest.TestCase):
         dirHandler.UnloadScript(oldScriptFile)
         success = dirHandler.RunScript(newScriptFile)
         self.failUnless(success, "Failed to run the new script file object")
+        
+        return newScriptFile
 
     def testOverwriteDifferentFileBaseClassReloadProblems(self):
         """
@@ -88,7 +95,7 @@ class CodeReloadingTests(unittest.TestCase):
                      namespace.Class.__init__(self)
         """
         scriptDirPath = GetScriptDirectory()
-        cr = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader()
         dirHandler = cr.AddDirectory("game", scriptDirPath)
 
         import game
@@ -144,15 +151,24 @@ class CodeReloadingTests(unittest.TestCase):
         updating every class which inherits from an updated base class.
         """
         scriptDirPath = GetScriptDirectory()
-        cr = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader()
         dirHandler = cr.AddDirectory("game", scriptDirPath)
 
         import game
 
         newStyleClass = game.NewStyleBase
 
+        # Obtain references and instances for the two classes defined in the script.
+        oldStyleNamespaceClass = game.OldStyleSubclassViaNamespace
+        oldStyleNamespaceClassInstance1 = oldStyleNamespaceClass()
+        oldStyleGlobalReferenceClass = game.OldStyleSubclassViaGlobalReference
+        oldStyleGlobalReferenceClassInstance1 = oldStyleGlobalReferenceClass()
         newStyleNamespaceClass = game.NewStyleSubclassViaNamespace
         newStyleNamespaceClassInstance1 = newStyleNamespaceClass()
+        newStyleGlobalReferenceClass = game.NewStyleSubclassViaGlobalReference
+        newStyleGlobalReferenceClassInstance1 = newStyleGlobalReferenceClass()
+        newStyleClassReferenceClass = game.NewStyleSubclassViaClassReference
+        newStyleClassReferenceClassInstance1 = newStyleClassReferenceClass()
 
         self.ReloadScriptFile(dirHandler, scriptDirPath, "example.py")
 
@@ -160,7 +176,10 @@ class CodeReloadingTests(unittest.TestCase):
         # to their base class indirectly through the namespace clash when that
         # namespace accessed class differs from their referenced base class.
 
+        self.failUnlessRaises(TypeError, oldStyleNamespaceClassInstance1.Func)
         self.failUnlessRaises(TypeError, newStyleNamespaceClassInstance1.Func)
+        self.failUnlessRaises(TypeError, game.OldStyleSubclassViaNamespace)
+        self.failUnlessRaises(TypeError, game.NewStyleSubclassViaNamespace)
 
         # In order to make overwriting of classes in the namespace a more
         # viable approach, these existing instances need to just work.  We
@@ -173,7 +192,6 @@ class CodeReloadingTests(unittest.TestCase):
             # Class '__bases__' references are stored in a tuple.
             if type(ob1) is tuple:
                 for ob2 in gc.get_referrers(ob1):
-                    # print "L2", type(ob2)
                     if type(ob2) in (types.ClassType, types.TypeType):
                         if ob2.__bases__ is ob1:
                             __bases__ = list(ob2.__bases__)
@@ -205,7 +223,7 @@ class CodeReloadingTests(unittest.TestCase):
         versions of a class, still work.
         """
         scriptDirPath = GetScriptDirectory()
-        cr = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader()
         dirHandler = cr.AddDirectory("game", scriptDirPath)
         
         import game

@@ -25,16 +25,7 @@ class ScriptDirectory:
         self.SetBaseNamespaceName(baseNamespace)
 
     def __del__(self):
-        logging.info("Cleaning up after removed directory '%s'", self.baseDirPath)
-        for scriptFile in self.filesByPath.itervalues():
-            self.UnloadScript(scriptFile)
-
-        namespacePaths = self.namespaces.keys()
-        namespacePaths.sort()
-        namespacePaths.reverse()
-        
-        for namespacePath in namespacePaths:
-            self.DestroyNamespace(namespacePath)
+        self.Unload()
 
     def SetBaseDirectory(self, baseDirPath):
         self.baseDirPath = baseDirPath
@@ -93,6 +84,23 @@ class ScriptDirectory:
             else:
                 logging.error("Unrecognised type of directory entry %s", entryPath)
 
+    def Unload(self):
+        logging.info("Cleaning up after removed directory '%s'", self.baseDirPath)
+
+        for k, scriptFile in self.filesByPath.items():
+            self.UnloadScript(scriptFile)
+            del self.filesByPath[k]
+
+        namespacePaths = self.namespaces.keys()
+        namespacePaths.sort()
+        namespacePaths.reverse()
+        
+        for namespacePath in namespacePaths:
+            self.DestroyNamespace(namespacePath)
+
+    def GetNamespace(self, namespaceName):
+        return self.namespaces[namespaceName]
+
     def CreateNamespace(self, namespaceName):
         module = self.namespaces.get(namespaceName, None)
         if module is not None:
@@ -131,6 +139,7 @@ class ScriptDirectory:
 
         logging.info("DestroyNamespace '%s'", namespaceName)
         del sys.modules[namespaceName]
+        del self.namespaces[namespaceName]
 
     def RegisterScript(self, scriptFile):
         # Index the file by its full path.
@@ -168,7 +177,7 @@ class ScriptDirectory:
         return True
 
     def UnloadScript(self, scriptFile):
-        namespace = self.CreateNamespace(scriptFile.namespacePath)
+        namespace = self.GetNamespace(scriptFile.namespacePath)
         self.RemoveModuleAttributes(scriptFile, namespace)
 
     def InsertModuleAttributes(self, scriptFile, namespace):

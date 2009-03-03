@@ -22,6 +22,10 @@ class CodeReloader:
         handler.Load()
         return handler
 
+    def RemoveDirectory(self, baseDirPath):
+        handler = self.directoriesByPath[baseDirPath]
+        handler.Unload()
+
     def FindDirectory(self, filePath):
         filePathLower = filePath.lower()
         for dirPath, dirHandler in self.directoriesByPath.iteritems():
