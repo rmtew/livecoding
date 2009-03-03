@@ -32,4 +32,4 @@ class NewStyle(NewStyleBase):
         NewStyleBase.Func(self, *args, **kwargs)
 
     def FuncSuper(self, *args, **kwargs):
-        super(NewStyleBase, self).Func(self, *args, **kwargs)
+        super(NewStyle, self).Func(self, *args, **kwargs)

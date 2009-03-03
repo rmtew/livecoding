@@ -61,6 +61,7 @@ class CodeReloadingTests(unittest.TestCase):
     def testOverwriteDifferentFileBaseClassReloadProblems(self):
         """
         Reloading approach: Overwrite old objects on reload.
+        Reloading scope: Different file.
         
         * What is this test intended to show?
 
@@ -128,15 +129,16 @@ class CodeReloadingTests(unittest.TestCase):
         newStyleGlobalReferenceClassInstance2.FuncSuper()
         newStyleClassReferenceClassInstance2.Func()
 
-    def testOverwriteDifferentFileBaseClassReloadWithFixAttempt(self):
+    def testOverwriteDifferentFileBaseClassReloadSolutions(self):
         """
         Reloading approach: Overwrite old objects on reload.
+        Reloading scope: Different file.
 
         * What is this test intended to show?
         
         This test builds on:
 
-            'testOverwriteDifferentFileBaseClassReload'
+            'testOverwriteDifferentFileBaseClassReloadProblems'
 
         It attempts to work around the problems shown in that test by
         updating every class which inherits from an updated base class.
@@ -186,12 +188,22 @@ class CodeReloadingTests(unittest.TestCase):
     def testOverwriteSameFileClassReload(self):
         """
         Reloading approach: Overwrite old objects on reload.
+        Reloading scope: Same file.
         
-        This test is intended to show the behaviour of changed namespace
-        entries on old and new instances of classes defined in the same
-        file, where inheritance is involved.
+        1. Get references to the exported classes.
+        2. Instantiate an instance from each class.
+        3. Call the functions exposed by each instance.
+
+        4. Reload the script the classes were exported from.
+
+        5. Verify that the old classes were replaced with new ones.
+        6. Call the functions exposed by each old class instance.
+        7. Instantiate an instance of each new class.
+        8. Call the functions exposed by each new class instance.
+
+        This verifies that instances linked to old superceded
+        versions of a class, still work.
         """
-        return
         scriptDirPath = GetScriptDirectory()
         cr = reloader.CodeReloader()
         dirHandler = cr.AddDirectory("game", scriptDirPath)
@@ -219,28 +231,43 @@ class CodeReloadingTests(unittest.TestCase):
         self.ReloadScriptFile(dirHandler, scriptDirPath, "example.py")
 
         # Verify that the original classes were replaced with new versions.
-        self.failUnless(testClass is not game.Test, "Failed to replace the original 'game.Test' class")
-        self.failUnless(testBaseClass is not game.TestBase, "Failed to replace the original 'game.TestBase' class")
+        self.failUnless(oldStyleBaseClass is not game.OldStyleBase, "Failed to replace the original 'game.OldStyleBase' class")
+        self.failUnless(oldStyleClass is not game.OldStyle, "Failed to replace the original 'game.OldStyle' class")
+        self.failUnless(newStyleBaseClass is not game.NewStyleBase, "Failed to replace the original 'game.NewStyleBase' class")
+        self.failUnless(newStyleClass is not game.NewStyle, "Failed to replace the original 'game.NewStyle' class")
 
         # Verify that the exposed method can be called on the pre-existing instances.
-        testInstance.Func()
-        testBaseInstance.Func()
+        oldStyleBaseClassInstance.Func()
+        oldStyleClassInstance.Func()
+        newStyleBaseClassInstance.Func()
+        newStyleClassInstance.Func()
+        newStyleClassInstance.FuncSuper()
 
         # Make some new instances from the old class references.
-        testInstance = testClass()
-        testBaseInstance = testBaseClass()
+        oldStyleBaseClassInstance = oldStyleBaseClass()
+        oldStyleClassInstance = oldStyleClass()
+        newStyleBaseClassInstance = newStyleBaseClass()
+        newStyleClassInstance = newStyleClass()
         
         # Verify that the exposed method can be called on the new instances.
-        testInstance.Func()
-        testBaseInstance.Func()
+        oldStyleBaseClassInstance.Func()
+        oldStyleClassInstance.Func()
+        newStyleBaseClassInstance.Func()
+        newStyleClassInstance.Func()
+        newStyleClassInstance.FuncSuper()
         
         # Make some new instances from the new class references.
-        testInstance = game.Test()
-        testBaseInstance = game.TestBase()
+        oldStyleBaseClassInstance = game.OldStyleBase()
+        oldStyleClassInstance = game.OldStyle()
+        newStyleBaseClassInstance = game.NewStyleBase()
+        newStyleClassInstance = game.NewStyle()
         
         # Verify that the exposed method can be called on the new instances.
-        testInstance.Func()
-        testBaseInstance.Func()
+        oldStyleBaseClassInstance.Func()
+        oldStyleClassInstance.Func()
+        newStyleBaseClassInstance.Func()
+        newStyleClassInstance.Func()
+        newStyleClassInstance.FuncSuper()
 
     def testDirectoryRegistration(self):
         """
