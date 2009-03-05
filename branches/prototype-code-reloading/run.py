@@ -78,19 +78,66 @@ class CodeReloadingTests(unittest.TestCase):
                             __bases__[idx] = newBaseClass
                             ob2.__bases__ = tuple(__bases__)
 
+    def UpdateGlobalReferences(self, oldBaseClass, newBaseClass):
+        """
+        References to the old version of the class might be held in global dictionaries.
+        - Do not replace the reference to the old class, if it is held in the
+          its own file.
+        - Do not worry about replacing references held in local dictionaries, as this
+          is not possible.
+
+        So, just replace all references held in dictionaries.  We're avoiding replacing
+        the case which shouldn't be replaced, so this should be safe.
+        """
+        import gc, types
+        for ob1 in gc.get_referrers(oldBaseClass):
+            # Class '__bases__' references are stored in a tuple.
+            if type(ob1) is dict:
+                for ob2 in gc.get_referrers(ob1):
+                    if type(ob2) is dict:
+                        for ob3 in gc.get_referrers(ob2):
+                            if type(ob3) is types.InstanceType:
+                                # Ignore originating globals dictionary.
+                                if oldBaseClass.__file__ == ob3.filePath:
+                                    continue
+
+                                keyList = []
+                                for k, v in ob1.iteritems():
+                                    if v is oldBaseClass:
+                                        keyList.append(k)
+                                for k in keyList:
+                                    ob1[k] = newBaseClass
+
     def testOverwriteDifferentFileBaseClassReload(self):
         """
         Reloading approach: Overwrite old objects on reload.
         Reloading scope: Different file.
 
-        * What is this test intended to show?
-        
-        This test builds on:
+        This test is intended to demonstrate the problems involved in reloading
+        base classes with regard to existing subclasses.
 
-            'testOverwriteDifferentFileBaseClassReloadProblems'
+        Problems:
+        1) Class references used by subclasses, stored outside of the namespace.
 
-        It attempts to work around the problems shown in that test by
-        updating every class which inherits from an updated base class.
+           i.e. import module
+                BaseClass = module.BaseClass
+
+                class SubClass(BaseClass):
+                    def __init__(self):
+                        BaseClass.__init__(self)
+
+           When 'module.BaseClass' is updated to a new version, 'BaseClass'
+           will still refer to the old version.
+           
+           'SubClass' will also have the next problem.
+
+        2) The class reference held by a subclass.
+
+           i.e. SubClass.__bases__
+
+           When 'module.BaseClass' is updated to a new version, 'SubClass.__bases__'
+           will still hold a reference to the old version.
+
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader()
@@ -98,6 +145,7 @@ class CodeReloadingTests(unittest.TestCase):
 
         import game
 
+        oldStyleClass = game.OldStyleBase
         newStyleClass = game.NewStyleBase
 
         ## Obtain references and instances for the two classes defined in the script.
@@ -112,15 +160,28 @@ class CodeReloadingTests(unittest.TestCase):
         newStyleClassReferenceClass = game.NewStyleSubclassViaClassReference
         newStyleClassReferenceClassInstance1 = newStyleClassReferenceClass()
 
-        self.ReloadScriptFile(dirHandler, scriptDirPath, "example.py")
-
-        ## Call functions on the instances created pre-reload.
-        self.failUnlessRaises(TypeError, oldStyleNamespaceClassInstance1.Func)
+        ## Verify that all the functions are callable before the reload.
+        oldStyleNamespaceClassInstance1.Func()
         oldStyleGlobalReferenceClassInstance1.Func()
-        self.failUnlessRaises(TypeError, newStyleNamespaceClassInstance1.Func)
+        newStyleNamespaceClassInstance1.Func()
+        newStyleNamespaceClassInstance1.FuncSuper()
         newStyleGlobalReferenceClassInstance1.Func()
         newStyleGlobalReferenceClassInstance1.FuncSuper()
         newStyleClassReferenceClassInstance1.Func()
+
+        self.ReloadScriptFile(dirHandler, scriptDirPath, "example.py")
+
+        ## Call functions on the instances created pre-reload.
+        self.failUnlessRaises(TypeError, oldStyleNamespaceClassInstance1.Func)  # A
+        oldStyleGlobalReferenceClassInstance1.Func()
+        self.failUnlessRaises(TypeError, newStyleNamespaceClassInstance1.Func)  # B
+        newStyleNamespaceClassInstance1.FuncSuper()
+        newStyleGlobalReferenceClassInstance1.Func()
+        newStyleGlobalReferenceClassInstance1.FuncSuper()
+        newStyleClassReferenceClassInstance1.Func()
+
+        # A) Accessed the base class via namespace, got incompatible post-reload version.
+        # B) Same as A.
 
         ## Create new post-reload instances of the subclasses.
         self.failUnlessRaises(TypeError, game.OldStyleSubclassViaNamespace)
@@ -128,6 +189,8 @@ class CodeReloadingTests(unittest.TestCase):
         self.failUnlessRaises(TypeError, game.NewStyleSubclassViaNamespace)
         newStyleGlobalReferenceClassInstance2 = game.NewStyleSubclassViaGlobalReference()
         newStyleClassReferenceClassInstance2 = game.NewStyleSubclassViaClassReference()
+
+        # *) Fail for same reason as the calls to the pre-reload instances.
 
         ## Call functions on the instances created post-reload.
         # oldStyleNamespaceClassInstance2.Func()
@@ -139,13 +202,58 @@ class CodeReloadingTests(unittest.TestCase):
         newStyleClassReferenceClassInstance2.Func()
 
         ## Pre-reload instances get their base class replaced with the new version.
+        self.UpdateBaseClass(oldStyleClass, game.OldStyleBase)
         self.UpdateBaseClass(newStyleClass, game.NewStyleBase)
 
         ## Call functions on the instances created pre-reload.
-        self.failUnlessRaises(TypeError, oldStyleNamespaceClassInstance1.Func)
+        oldStyleNamespaceClassInstance1.Func()                                          # A
+        self.failUnlessRaises(TypeError, oldStyleGlobalReferenceClassInstance1.Func)    # B
+        newStyleNamespaceClassInstance1.Func()                                          # C
+        newStyleNamespaceClassInstance1.FuncSuper()
+        self.failUnlessRaises(TypeError, newStyleGlobalReferenceClassInstance1.Func)    # D
+        newStyleGlobalReferenceClassInstance1.FuncSuper()
+        newStyleClassReferenceClassInstance1.Func()
+
+        # A) Fixed, due to base class update.
+        # B) The base class is now post-reload, the global reference still pre-reload.
+        # C) Fixed, due to base class update.
+        # D) The base class is now post-reload, the global reference still pre-reload.
+
+        ## Call functions on the instances created post-reload.
+        # oldStyleNamespaceClassInstance2.Func()
+        self.failUnless(TypeError, oldStyleGlobalReferenceClassInstance2.Func)
+        # newStyleNamespaceClassInstance2.Func()
+        # newStyleNamespaceClassInstance2.FuncSuper()
+        self.failUnlessRaises(TypeError, newStyleGlobalReferenceClassInstance2.Func)
+        newStyleGlobalReferenceClassInstance2.FuncSuper()
+        newStyleClassReferenceClassInstance2.Func()
+
+        ## Create new post-reload post-update instances of the subclasses.
+        oldStyleNamespaceClassInstance3 = game.OldStyleSubclassViaNamespace()
+        self.failUnlessRaises(TypeError, game.OldStyleSubclassViaGlobalReference)
+        newStyleNamespaceClassInstance3 = game.NewStyleSubclassViaNamespace()
+        self.failUnlessRaises(TypeError, game.NewStyleSubclassViaGlobalReference)
+        newStyleClassReferenceClassInstance3 = game.NewStyleSubclassViaClassReference()
+
+        ## Call functions on the instances created post-reload post-update.
+        oldStyleNamespaceClassInstance3.Func()
+        #oldStyleGlobalReferenceClassInstance3.Func()
+        newStyleNamespaceClassInstance3.Func()
+        newStyleNamespaceClassInstance3.FuncSuper()
+        #newStyleGlobalReferenceClassInstance3.Func()
+        #newStyleGlobalReferenceClassInstance3.FuncSuper()
+        newStyleClassReferenceClassInstance3.Func()
+
+        self.UpdateGlobalReferences(oldStyleClass, game.OldStyleBase)
+        self.UpdateGlobalReferences(newStyleClass, game.NewStyleBase)
+
+        ### All calls on instances created at any point, should now work.
+        ## Call functions on the instances created pre-reload.
+        oldStyleNamespaceClassInstance1.Func()
         oldStyleGlobalReferenceClassInstance1.Func()
         newStyleNamespaceClassInstance1.Func()
-        self.failUnlessRaises(TypeError, newStyleGlobalReferenceClassInstance1.Func)
+        newStyleNamespaceClassInstance1.FuncSuper()
+        newStyleGlobalReferenceClassInstance1.Func()
         newStyleGlobalReferenceClassInstance1.FuncSuper()
         newStyleClassReferenceClassInstance1.Func()
 
@@ -154,25 +262,35 @@ class CodeReloadingTests(unittest.TestCase):
         oldStyleGlobalReferenceClassInstance2.Func()
         # newStyleNamespaceClassInstance2.Func()
         # newStyleNamespaceClassInstance2.FuncSuper()
-        self.failUnlessRaises(TypeError, newStyleGlobalReferenceClassInstance2.Func)
+        newStyleGlobalReferenceClassInstance2.Func()
         newStyleGlobalReferenceClassInstance2.FuncSuper()
         newStyleClassReferenceClassInstance2.Func()
 
-        ## Create new post-reload post-update instances of the subclasses.
-        self.failUnlessRaises(TypeError, game.OldStyleSubclassViaNamespace)
-        oldStyleGlobalReferenceClassInstance3 = game.OldStyleSubclassViaGlobalReference()
-        newStyleNamespaceClassInstance3 = game.NewStyleSubclassViaNamespace()
-        self.failUnlessRaises(TypeError, game.NewStyleSubclassViaGlobalReference)
-        newStyleClassReferenceClassInstance3 = game.NewStyleSubclassViaClassReference()
-
         ## Call functions on the instances created post-reload post-update.
-        # oldStyleNamespaceClassInstance3.Func()
-        oldStyleGlobalReferenceClassInstance3.Func()
+        oldStyleNamespaceClassInstance3.Func()
+        #oldStyleGlobalReferenceClassInstance3.Func()
         newStyleNamespaceClassInstance3.Func()
         newStyleNamespaceClassInstance3.FuncSuper()
         #newStyleGlobalReferenceClassInstance3.Func()
         #newStyleGlobalReferenceClassInstance3.FuncSuper()
         newStyleClassReferenceClassInstance3.Func()
+
+        ### New instances from the classes should be creatable.
+        ## Instantiate the classes.
+        oldStyleNamespaceClassInstance4 = game.OldStyleSubclassViaNamespace()
+        oldStyleGlobalReferenceClassInstance4 = game.OldStyleSubclassViaGlobalReference()
+        newStyleNamespaceClassInstance4 = game.NewStyleSubclassViaNamespace()
+        newStyleGlobalReferenceClassInstance4 = game.NewStyleSubclassViaGlobalReference()
+        newStyleClassReferenceClassInstance4 = game.NewStyleSubclassViaClassReference()
+
+        ## Call functions on the instances.
+        oldStyleNamespaceClassInstance4.Func()
+        oldStyleGlobalReferenceClassInstance4.Func()
+        newStyleNamespaceClassInstance4.Func()
+        newStyleNamespaceClassInstance4.FuncSuper()
+        newStyleGlobalReferenceClassInstance4.Func()
+        newStyleGlobalReferenceClassInstance4.FuncSuper()
+        newStyleClassReferenceClassInstance4.Func()
 
     def testOverwriteSameFileClassReload(self):
         """
@@ -293,6 +411,54 @@ class CodeReloadingTests(unittest.TestCase):
 
         # Test that a bad path will not find a handler when there are valid ones for other paths.
         self.failUnless(cr.FindDirectory("unregistered path") is None, "Got a script directory handler for an unregistered path")
+
+    def testLocalVariableDirectModificationLimitation(self):
+        """
+        Demonstrate that local variables cannot be indirectly modified via locals().
+        """
+        def ModifyLocal():
+            localValue = 1
+            locals()["localValue"] = 2
+            return localValue
+
+        value = ModifyLocal()
+        self.failUnless(value == 1, "Local variable unexpectedly indirectly modified")
+
+        # Conclusion: Local variables are an unavoidable problem when code reloading.
+
+    def testLocalVariableFrameModificationLimitation(self):
+        """
+        Demonstrate that local variables cannot be indirectly modified via frame references.
+        """
+        expectedValue = 1
+
+        def ModifyLocal():
+            localValue = expectedValue
+            yield localValue
+            yield localValue
+
+        g = ModifyLocal()
+
+        # Verify that the first generated value is the expected value.
+        v = g.next()
+        self.failUnless(v == expectedValue, "Initial local variable value %s, expected %d" % (v, expectedValue))
+
+        f_locals = g.gi_frame.f_locals
+
+        # Verify that the frame local value is the expected value.
+        v = f_locals["localValue"]
+        self.failUnless(v == expectedValue, "Indirectly referenced local variable value %s, expected %d" % (v, expectedValue))
+        f_locals["localValue"] = 2
+
+        # Verify that the frame local value pretended to change.
+        v = f_locals["localValue"]
+        self.failUnless(v == 2, "Indirectly referenced local variable value %s, expected %d" % (v, 2))
+
+        # Verify that the second generated value is unchanged and still the expected value.
+        v = g.next()
+        self.failUnless(v == expectedValue, "Initial local variable value %s, expected %d" % (v, expectedValue))
+        
+        # Conclusion: Local variables are an unavoidable problem when code reloading.
 
 
 class DummyClass:
