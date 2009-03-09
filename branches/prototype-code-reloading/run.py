@@ -460,6 +460,23 @@ class CodeReloadingTests(unittest.TestCase):
         
         # Conclusion: Local variables are an unavoidable problem when code reloading.
 
+    def testImmutableMethodModificationLimitation(self):
+        """
+        Demonstrate that methods are static, and cannot be updated in place.
+        """
+        class TestClass:
+            def TestMethod(self):
+                pass
+        testInstance = TestClass()
+
+        unboundMethod = TestClass.TestMethod
+        self.failUnlessRaises(TypeError, lambda: setattr(unboundMethod, "im_class", self.__class__))
+
+        boundMethod = testInstance.TestMethod
+        self.failUnlessRaises(TypeError, lambda: setattr(boundMethod, "im_class", self.__class__))
+
+        # Conclusion: Existing references to methods are an unavoidable problem when code reloading.
+
 
 class DummyClass:
     def __init__(self, *args, **kwargs):
