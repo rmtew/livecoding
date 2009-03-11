@@ -1,46 +1,34 @@
-TODO:
-- Unit tests which demonstrate the frame reloading limitation.
-- Unit tests which demonstrate the immutable method limitation.
+
+
+WHITE PAPER:
+
 - Pushing the overwriting approach to the limits.
+  - Base class replacement. DONE.
+  - Global variable replacement. DONE.
+  - Combination of both. DONE.
+  - Document for future reference. DONE.
+- Unit test which demonstrates the local variable modification limitation. DONE.
+- Unit tests which demonstrate the frame reloading limitation. DONE.
+- Unit tests which demonstrate the immutable method limitation. DONE.
+
 - Starting an update in place approach.
+  - Single file update test.
+    - Need a reload method which does update in place.
+      The current code 'ReloadScriptFile' does the overwrite.
+      No internals are currently exposed from the modules to allow update in place.
+  - Different file base class update test.
 
-----------------------------------------------------------------------
+- Comparison of the pros and cons of both approaches.
 
-Title: Limiting factors in code reloading
+- Analysis of the limitations of 'reload'.
 
-<span style="font-weight:bold;">Local variables</span>
+FUNCTIONALITY:
 
-This will create a function which when run as a Stackless tasklet, blocks in mid-execution on a Stackless channel.<pre name="code" class="python">>>> import stackless
->>> c = stackless.channel()
->>> def f():
-...     a = 1
-...     b = {}
-...     c.receive()</pre>Next the tasklet is created and run, leaving it blocked on the channel.<pre name="code" class="python">>>> t = stackless.tasklet(f)()
->>> t.run()</pre>The function in mid-execution has a frame encapsulating its running state, like the local variables within that executing function.  These variables can be accessed as a dictionary.  Sort of.<pre name="code" class="python">>>> dir(t)
-[..., 'frame', ...]
->>> dir(t.frame)
-[..., 'f_locals', ...]
->>> t.frame.f_locals
-{'a': 1, 'b': {}}
->>> t.frame.f_locals['a'] = 2
->>> t.frame.f_locals
-{'a': 1, 'b': {}}</pre>What this demonstrates is that there is no real local variable dictionary.  The one obtained above is actually constructed on request.
-
-The repercussions of this are that code in mid-execution cannot be satisfactorily updated to reflect code reloading changes.  That code has to be able to continue executing without error using whatever objects it is holding onto, whatever the approach taken to code reloading is.
-
-<span style="font-weight:bold;">Methods</span>
-
-A method is a reference to a function, whether it is obtained from a class or an instance.  In the following case, a method is being obtained from a class.<pre name="code" class="python">>>> class X:
-...     def f(self):
-...             pass
-...
->>> X.f
-&lt;unbound method X.f&gt;</pre>Methods have attributes which refer to the class (<code>im_class</code>) and function involved (<code>im_func</code>), and possibly also an instance (<code>im_self</code>).  Bound methods are taken from instances and have values for all three attributes, whereas unbound methods are taken from classes and do not have an instance.  All of these attributes are read only and cannot be changed.<pre name="code" class="python">>>> dir(f)
-[..., 'im_class', 'im_func', 'im_self']
->>> f.im_class
-<class __main__.X at 0x01A1F720>
->>> f.im_class = X
-Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-TypeError: readonly attribute</pre>
-
+- Classes
+  - Doc strings are updated.
+  - Function are updated.
+    - Doc strings are updated.
+    - Arguments on functions are updated.
+  - Slots.
+  - Properties.
+  - Class methods / static methods.
