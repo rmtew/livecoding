@@ -18,9 +18,9 @@ MODE_OVERWRITE = 1
 MODE_UPDATE = 2
 
 class CodeReloader:
-    def __init__(self, mode=MODE_OVERWRITE, leakRemovedAttributes=True):
+    def __init__(self, mode=MODE_OVERWRITE, leakingEnabled=True):
         self.mode = mode
-        self.leakRemovedAttributes = leakRemovedAttributes
+        self.leakingEnabled = leakingEnabled
         self.directoriesByPath = {}
 
     def AddDirectory(self, baseNamespace, baseDirPath):
@@ -34,17 +34,17 @@ class CodeReloader:
 
     def FindDirectory(self, filePath):
         filePathLower = filePath.lower()
-        for dirPath, dirHandler in self.directoriesByPath.iteritems():
+        for dirPath, scriptDirectory in self.directoriesByPath.iteritems():
             if filePathLower.startswith(dirPath.lower()):
-                return dirHandler
+                return scriptDirectory
 
     def ProcessChangedFile(self, filePath, added=False, changed=False, deleted=False):
-        dirHandler = self.FindDirectory(filePath)
-        if dirHandler is None:
+        scriptDirectory = self.FindDirectory(filePath)
+        if scriptDirectory is None:
             logging.error("File change event for invalid path '%s'", filePath)
             return
 
-        oldScriptFile = dirHandler.FindScript(filePath)
+        oldScriptFile = scriptDirectory.FindScript(filePath)
         if oldScriptFile:
             # Modified or deleted.
             if changed:
@@ -62,9 +62,9 @@ class CodeReloader:
         logging.info("ReloadScript namespace='%s', file='%s'", namespacePath, filePath)
 
         # Read in and compile the modified script file.
-        dirHandler = self.FindDirectory(filePath)
-        newScriptFile = dirHandler.LoadScript(filePath, namespacePath)
-        newScriptFile.ProcessPreviousVersion(oldScriptFile)
+        scriptDirectory = self.FindDirectory(filePath)
+        newScriptFile = scriptDirectory.LoadScript(filePath, namespacePath)
+        newScriptFile.ProcessPreviousVersion(oldScriptFile, leakingEnabled=self.leakingEnabled)
 
         # Try and execute the new script file.
         if not newScriptFile.Run():
@@ -79,19 +79,20 @@ class CodeReloader:
         if not self.ScriptCompatibilityCheck(oldScriptFile, newScriptFile):
             return False
 
-        if self.leakRemovedAttributes:
+        if self.leakingEnabled:
             # Note what attributes the old script file contributes.
             overwritableAttributes = oldScriptFile.contributedAttributes.copy()
-            namespace = dirHandler.GetNamespace(namespacePath)
+            namespace = scriptDirectory.GetNamespace(namespacePath)
         else:
-            dirHandler.UnloadScript(oldScriptFile)
+            # Remove all the contributed attributes.
+            scriptDirectory.UnloadScript(oldScriptFile)
 
             overwritableAttributes = set()
-            namespace = dirHandler.CreateNamespace(newScriptFile.namespacePath, filePath)
+            namespace = scriptDirectory.CreateNamespace(newScriptFile.namespacePath, filePath)
 
         # Insert the attributes from the new script file, allowing overwriting
         # of entries contributed by the old script file.
-        dirHandler.InsertModuleAttributes(newScriptFile, namespace, overwritableAttributes)
+        scriptDirectory.InsertModuleAttributes(newScriptFile, namespace, overwritableAttributes)
 
         # Keep track of the contributions of the old script file, which were
         # not overwritten.  These are now leaked in the name of reliability.
@@ -99,8 +100,8 @@ class CodeReloader:
             logging.warn("ReloadScript leaked attribute '%s'", attributeName)
             newScriptFile.AddLeakedAttribute(oldScriptFile.version, attributeName)
 
-        dirHandler.UnregisterScript(oldScriptFile)
-        dirHandler.RegisterScript(newScriptFile)
+        scriptDirectory.UnregisterScript(oldScriptFile)
+        scriptDirectory.RegisterScript(newScriptFile)
         
         return True
 
@@ -126,12 +127,13 @@ class ReloadableScriptFile(namespace.ScriptFile):
 
         self.leakedAttributes = {}
 
-    def ProcessPreviousVersion(self, oldScriptFile):
+    def ProcessPreviousVersion(self, oldScriptFile, leakingEnabled=False):
         # Keep track of how many revisions were made.
         self.version = oldScriptFile.version + 1
 
-        # Inherit the registry of leaked attributes.
-        self.leakedAttributes = oldScriptFile.leakedAttributes
+        if leakingEnabled:
+            # Inherit the registry of leaked attributes.
+            self.leakedAttributes = oldScriptFile.leakedAttributes
 
     def SetContributedAttributes(self, contributedAttributes):
         super(ReloadableScriptFile, self).SetContributedAttributes(contributedAttributes)

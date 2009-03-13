@@ -1,6 +1,13 @@
 A moderately thorough exploration of code reloading within the Python runtime
 
 ==============================================================================
+= WORKING NOTES: 13.03.2009
+
+TBD
+- See preceding set of notes.
+- Compatibility checks.
+
+==============================================================================
 = WORKING NOTES: 12.03.2009
 
 NOTES ON LEAKING DELETED ENTRIES FROM YESTERDAY
@@ -25,6 +32,29 @@ ADDING SUPPORT FOR LEAKING DELETED ENTRIES
     - Future handling jottings for later contemplation.
       - Add them into the new script file's globals.
         - Record what version of the script file they came from and what their variable name is in an inherited attributes dataset.
+- Added.
+  - Leaking propagates through further versions of a script file, through reloads.
+  - Replacement of removed attribute, will result in the leak being removed.
+
+POSSIBLE TASKS FOR TOMORROW:
+- Unit test leaking.
+  - Attribute is removed from a new version of the script file.
+    - Attribute appears in the leaked attributes dictionary of the new script file.
+    - Attribute is still present in the namespace.
+  - Attribute was already leaked, and reload comes with no replacement.
+    - New script file has leak entry propagated from old script file.
+    - Attribute is still present in the namespace.
+  - Attribute was already leaked, and reload comes with an invalid replacement.
+    - Reload is rejected.
+  - Attribute was already leaked, and reload comes with a valid replacement.
+    - New script file lacks leak entry for attribute.
+    - Attribute in namespace is value from new script file.
+
+FINAL THOUGHTS:
+- While writing the attribute leakage unit test outline, it occurred to me to consider storing leaked attribute information on the namespace itself.
+  - namespace.__leaked_attributes__[attributeName] = [ filePath, fileVersion ]
+  - What if another file contributed a compatible replacement?
+  - This might be the programmer refactoring and moving entries between files.
 
 ==============================================================================
 = WORKING NOTES: 11.03.2009

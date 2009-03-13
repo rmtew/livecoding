@@ -25,27 +25,25 @@ import namespace
 import reloader
 
 class CodeReloadingUseCases(TestCase):
-    codeReloader = None
-
     def setUp(self):
-        pass
+        self.codeReloader = None
 
     def tearDown(self):
         if self.codeReloader is not None:
             for dirPath in self.codeReloader.directoriesByPath.keys():
                 self.codeReloader.RemoveDirectory(dirPath)
 
-    def ReloadScriptFile(self, dirHandler, scriptDirPath, scriptFileName):
+    def ReloadScriptFile(self, scriptDirectory, scriptDirPath, scriptFileName):
         # Get a reference to the original script file object.
         scriptPath = os.path.join(scriptDirPath, scriptFileName)
-        oldScriptFile = dirHandler.FindScript(scriptPath)
+        oldScriptFile = scriptDirectory.FindScript(scriptPath)
         self.failUnless(oldScriptFile is not None, "Failed to find the existing loaded script file version")
         self.failUnless(isinstance(oldScriptFile, reloader.ReloadableScriptFile), "Obtained non-reloadable script file object")
 
         result = self.codeReloader.ReloadScript(oldScriptFile)
         self.failUnless(result is True, "Failed to reload the script file")
 
-        newScriptFile = dirHandler.FindScript(scriptPath)
+        newScriptFile = scriptDirectory.FindScript(scriptPath)
         self.failUnless(newScriptFile is not None, "Failed to find the script file after a reload")
         self.failUnless(newScriptFile is not oldScriptFile, "The registered script file is still the old version")
         
@@ -56,6 +54,7 @@ class CodeReloadingUseCases(TestCase):
         for ob1 in gc.get_referrers(oldBaseClass):
             # Class '__bases__' references are stored in a tuple.
             if type(ob1) is tuple:
+                # We need the subclass which uses those base classes.
                 for ob2 in gc.get_referrers(ob1):
                     if type(ob2) in (types.ClassType, types.TypeType):
                         if ob2.__bases__ is ob1:
@@ -112,8 +111,8 @@ class CodeReloadingUseCases(TestCase):
 
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader(leakRemovedAttributes=False)
-        dirHandler = cr.AddDirectory("game", scriptDirPath)
+        cr = self.codeReloader = reloader.CodeReloader(leakRemovedAttributes=True)
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
 
         import game
 
@@ -141,7 +140,7 @@ class CodeReloadingUseCases(TestCase):
         newStyleGlobalReferenceClassInstance1.FuncSuper()
         newStyleClassReferenceClassInstance1.Func()
 
-        self.ReloadScriptFile(dirHandler, scriptDirPath, "example.py")
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "example.py")
 
         ## Call functions on the instances created pre-reload.
         self.failUnlessRaises(TypeError, oldStyleNamespaceClassInstance1.Func)  # A
@@ -287,7 +286,7 @@ class CodeReloadingUseCases(TestCase):
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader()
-        dirHandler = cr.AddDirectory("game", scriptDirPath)
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
         
         import game
 
@@ -309,7 +308,7 @@ class CodeReloadingUseCases(TestCase):
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
 
-        self.ReloadScriptFile(dirHandler, scriptDirPath, "example.py")
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "example.py")
 
         # Verify that the original classes were replaced with new versions.
         self.failUnless(oldStyleBaseClass is not game.OldStyleBase, "Failed to replace the original 'game.OldStyleBase' class")
@@ -404,9 +403,9 @@ class CodeReloaderTests(TestCase):
         while len(scriptDirPaths):
             scriptDirPath = scriptDirPaths.pop()
             fictionalScriptPath = os.path.join(scriptDirPath, "nonExistentScript.py")
-            dirHandler = cr.FindDirectory(fictionalScriptPath)
-            self.failUnless(dirHandler, "Got no script directory handler instance")
-            self.failUnless(dirHandler is handlersByPath[scriptDirPath], "Got a different script directory handler instance")
+            scriptDirectory = cr.FindDirectory(fictionalScriptPath)
+            self.failUnless(scriptDirectory, "Got no script directory handler instance")
+            self.failUnless(scriptDirectory is handlersByPath[scriptDirPath], "Got a different script directory handler instance")
 
         # Test that a bad path will not find a handler when there are valid ones for other paths.
         self.failUnless(cr.FindDirectory("unregistered path") is None, "Got a script directory handler for an unregistered path")
