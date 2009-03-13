@@ -13,12 +13,68 @@ import traceback
 import types
 import logging
 
-class ScriptDirectory:
+
+class ScriptFile(object):
+    lastError = None
+    contributedAttributes = None
+
+    def __init__(self, filePath, namespacePath):
+        self.filePath = filePath
+        self.namespacePath = namespacePath
+
+        self.scriptGlobals = {}
+
+        self.Load(filePath)
+
+    def __repr__(self):
+        return "<ScriptFile filePath='%s' namespacePath='%s'>" % (self.filePath, self.namespacePath)
+
+    def Load(self, filePath):
+        self.filePath = filePath
+
+        script = open(self.filePath, 'r').read()
+        self.codeObject = compile(script, self.filePath, "exec")
+
+    def GetAttributeValue(self, attributeName):
+        return self.scriptGlobals[attributeName]
+
+    def SetContributedAttributes(self, contributedAttributes):
+        self.contributedAttributes = contributedAttributes
+        
+    def Run(self):
+        self.scriptGlobals = {}
+        try:
+            eval(self.codeObject, self.scriptGlobals, self.scriptGlobals)
+        except ImportError:
+            self.lastError = traceback.format_exception(*sys.exc_info())
+            return False
+
+        return True
+
+    def LogLastError(self, flush=True, context="Unknown logic"):
+        if self.lastError is None:
+            logging.error("Script file '%s' unexpectedly missing a last error", self.filePath)
+            return
+
+        logging.error("Error executing script file '%s'", self.filePath)
+        for line in self.lastError:
+            logging.error("%s", line.rstrip("\r\n"))
+
+        if flush:
+            self.lastError = None
+
+
+class ScriptDirectory(object):
+    scriptFileClass = ScriptFile
+
     dependencyResolutionPasses = 10
 
     def __init__(self, baseDirPath=None, baseNamespace=None):
+        # Script file objects indexed in different ways.
         self.filesByPath = {}
         self.filesByDirectory = {}
+
+        # Personal references to created namespaces.
         self.namespaces = {}
 
         self.SetBaseDirectory(baseDirPath)
@@ -101,18 +157,20 @@ class ScriptDirectory:
     def GetNamespace(self, namespaceName):
         return self.namespaces[namespaceName]
 
-    def CreateNamespace(self, namespaceName):
+    def CreateNamespace(self, namespaceName, filePath):
         module = self.namespaces.get(namespaceName, None)
         if module is not None:
+            if filePath in module.__file__:
+                raise RuntimeError("Namespace already exists", namespaceName)
             return module
 
         if namespaceName in sys.modules:
-            raise RuntimeError("Namespace already exists", namespaceName)
+            raise RuntimeError("Namespace already occupied", namespaceName)
 
         parts = namespaceName.rsplit(".", 1)
         if len(parts) == 2:
             baseNamespaceName, moduleName = parts
-            baseNamespace = self.CreateNamespace(baseNamespaceName)
+            baseNamespace = self.CreateNamespace(baseNamespaceName, filePath)
         else:
             baseNamespaceName, moduleName = None, parts[0]
             baseNamespace = None
@@ -153,6 +211,16 @@ class ScriptDirectory:
             self.filesByDirectory[relativeDirPath] = []
         self.filesByDirectory[relativeDirPath].append(scriptFile)
 
+    def UnregisterScript(self, scriptFile):
+        dirPath = os.path.dirname(scriptFile.filePath)
+        relativeDirPath = os.path.relpath(dirPath, self.baseDirPath)
+
+        self.filesByDirectory[relativeDirPath].remove(scriptFile)
+        if not len(self.filesByDirectory[relativeDirPath]):
+            del self.filesByDirectory[relativeDirPath]
+
+        del self.filesByPath[scriptFile.filePath]
+
     def FindScript(self, filePath):
         if filePath in self.filesByPath:
             return self.filesByPath[filePath]
@@ -160,7 +228,7 @@ class ScriptDirectory:
     def LoadScript(self, filePath, namespacePath):
         logging.info("LoadScript %s", filePath)
 
-        return ScriptFile(filePath, namespacePath)
+        return self.scriptFileClass(filePath, namespacePath)
 
     def RunScript(self, scriptFile):
         logging.info("RunScript %s", scriptFile.filePath)
@@ -171,16 +239,18 @@ class ScriptDirectory:
 
         logging.info("RunScript:Ran '%s'", scriptFile.filePath)
 
-        namespace = self.CreateNamespace(scriptFile.namespacePath)
+        namespace = self.CreateNamespace(scriptFile.namespacePath, scriptFile.filePath)
         self.InsertModuleAttributes(scriptFile, namespace)
 
         return True
 
-    def UnloadScript(self, scriptFile):
+    def UnloadScript(self, scriptFile, force=False):
         namespace = self.GetNamespace(scriptFile.namespacePath)
-        self.RemoveModuleAttributes(scriptFile, namespace)
+        if self.RemoveModuleAttributes(scriptFile, namespace):
+            return True
+        return False            
 
-    def InsertModuleAttributes(self, scriptFile, namespace):
+    def InsertModuleAttributes(self, scriptFile, namespace, overwritableAttributes=set()):
         moduleName = namespace.__name__
         
         # Track what files have contributed to the namespace.
@@ -189,7 +259,7 @@ class ScriptDirectory:
                 namespace.__file__ += ";"
             namespace.__file__ += scriptFile.filePath
 
-        contributedAttributes = []
+        contributedAttributes = set()
         for k, v in scriptFile.scriptGlobals.iteritems():
             if k == "__builtins__":
                 continue
@@ -207,14 +277,17 @@ class ScriptDirectory:
                 v.__module__ = moduleName
                 v.__file__ = scriptFile.filePath
 
-            # Never overwrite.  Ignore duplicate contributions.
-            if hasattr(namespace, k):
-                logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
-                continue
+            # By default we never overwrite.  This way we can identify duplicate contributions.
+            if k not in overwritableAttributes:
+                if hasattr(namespace, k):
+                    logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
+                    continue
+            else:
+                overwritableAttributes.remove(k)
 
             logging.info("InsertModuleAttribute %s.%s", moduleName, k)
             setattr(namespace, k, v)
-            contributedAttributes.append(k)
+            contributedAttributes.add(k)
 
         scriptFile.SetContributedAttributes(contributedAttributes)
 
@@ -228,54 +301,35 @@ class ScriptDirectory:
         namespace.__file__ = ";".join(paths)
 
         for k in scriptFile.contributedAttributes:
+            # Is the attribute still in use?
+            # self.PrintNamespaceEntryReferers(scriptFile, namespace, k)
             delattr(namespace, k)
-
-
-class ScriptFile:
-    lastError = None
-    contributedAttributes = None
-
-    def __init__(self, filePath, namespacePath):
-        self.filePath = filePath
-        self.namespacePath = namespacePath
-
-        self.scriptGlobals = {}
-
-        self.Load(filePath)
-
-    def __repr__(self):
-        return "<ScriptFile filePath='%s' namespacePath='%s'>" % (self.filePath, self.namespacePath)
-
-    def Load(self, filePath):
-        self.filePath = filePath
-
-        script = open(self.filePath, 'r').read()
-        self.codeObject = compile(script, self.filePath, "exec")
-        
-    def Run(self):
-        self.scriptGlobals = {}
-        try:
-            eval(self.codeObject, self.scriptGlobals, self.scriptGlobals)
-        except ImportError:
-            self.lastError = traceback.format_exception(*sys.exc_info())
-            return False
 
         return True
 
-    def SetContributedAttributes(self, contributedAttributes):
-        self.contributedAttributes = contributedAttributes
+    def PrintNamespaceEntryReferers(self, scriptFile, namespace, k):
+        return
+        v = getattr(namespace, k)
+        import gc
+        print "VALUE", v
+        for ob1 in gc.get_referrers(v):
+            # Ignore this function as a known referer.
+            if ob1 is sys._getframe():
+                continue
 
-    def LogLastError(self, flush=True):
-        if self.lastError is None:
-            logging.error("Script file '%s' unexpectedly missing a last error", self.filePath)
-            return
+            # Ignore the namespace as a known referer.
+            if ob1 is namespace.__dict__:
+                continue
 
-        logging.error("Script file '%s'", self.filePath)
-        for line in self.lastError:
-            logging.error("%s", line.rstrip("\r\n"))
+            # Ignore the contributing script file as a known referer.
+            if ob1 is scriptFile.scriptGlobals:
+                continue
 
-        if flush:
-            self.lastError = None
+            if type(ob1) is dict:
+                print type(ob1), len(ob1)
+                print ob1.keys()
+            else:
+                print type(ob1), ob1
 
 
 if __name__ == "__main__":

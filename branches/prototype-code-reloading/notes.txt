@@ -1,4 +1,84 @@
+A moderately thorough exploration of code reloading within the Python runtime
 
+==============================================================================
+= WORKING NOTES: 12.03.2009
+
+NOTES ON LEAKING DELETED ENTRIES FROM YESTERDAY
+- Have an index of what was leaked, and what leaked it.
+- Allow compatible replacements from the same source file.
+- Disallow replacements from other source files.
+
+ADDING SUPPORT FOR LEAKING DELETED ENTRIES
+- Started writing overwrite support.
+  - This is not what I was supposed to be doing.  But it needs to be done in order to add leaking support.  The problem is that adding it to the namespacing solution is not what I should be doing.  I should be adding it to the code reloading solution.
+- Fleshing out the reloading module should drive changes to the namespace module.
+  - Implementing a ReloadScript method.
+    - Keep focus.  Stick to overwriting reloads, with leakage for now.
+      - Load in the new version of the script file.
+      - Note what attributes the old script file contributes.
+      - Insert the attributes from the new script file, allowing overwriting of entries contributed by the old script file.
+      - Keep track of the contributions of the old script file, which were not overwritten.
+      - Note them down for future handling.
+        - This will do for now.  Just leak them.
+      - No, it won't do.  I also need to propagate them down further versions of the file.
+        - If a new file
+    - Future handling jottings for later contemplation.
+      - Add them into the new script file's globals.
+        - Record what version of the script file they came from and what their variable name is in an inherited attributes dataset.
+
+==============================================================================
+= WORKING NOTES: 11.03.2009
+
+Namespace loader does:
+- Directory loading:
+  - Locates each script file and load it.
+- Dependency resolution loop, each script is run:
+  - Namespace entry made/retrieved.
+  - Module attributes from the script are injected.
+
+THINKING THINGS THROUGH
+- Tracking contributed attributes.
+  - In the overwrite case, I have it so that ...
+  - Actually, what happens when a file is updated using overwriting.
+    - If there are items which were present in the namespace, which are no longer in the class, should they be removed?  Any running code using indirect referencing, will error when they next try.
+      - Possible indirect referenced attribute types:
+        - Classes.
+        - Constants.
+      - Having to keep these around while they are still in use doesn't mean they have to be kept around for the life of the application.
+        - If I track the removed entries, then maybe I can check their referrers periodically to determine if they are still in use.
+    - Replacement with incompatible entries should result in a rejected reload.
+      - File is loaded and provides game.Value as a class.
+      - File is reloaded and no longer has Value.
+      - File is reloaded and Value is back as an integer.
+        - Reject the reload.
+
+DECISION ON INTELLIGENTLY KEEPING ONLY USED STALE ENTRIES: DEFERRED
+- Working out what is holding references to namespace entries which are being
+  removed on the updating of a script file, is proving too much effort and is
+  wasting valuable attention span and time.
+  - Need to give up on it for now.  What approach do I take, if I don't do it?
+    - Can only leave disowned entries in place to ensure reliability.
+    - Keep track of who originally contributed them.
+      - Error if they are recontributed by someone else.
+      - Attempt an override if they are reinstated by the original contributor.
+        - But do compatibility check.
+
+APPROACH TO LEAKING ALL CONTRIBUTED ENTRIES
+- Have an index of what was leaked, and what leaked it.
+- Allow compatible replacements from the same source file.
+- Disallow replacements from other source files.
+
+==============================================================================
+= RESOLUTIONS:
+
+What reloading approaches should be supported?
+- Overwriting, updating or both.
+
+What about the indirect namespacing to entries which were deleted from updated modules?
+- Deleted entries need to be left in place as long as they are in use.
+
+==============================================================================
+= TODO:
 
 WHITE PAPER:
 

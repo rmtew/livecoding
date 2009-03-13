@@ -11,57 +11,43 @@ if __name__ == "__main__":
     if namespacePath not in sys.path:
         sys.path.append(namespacePath)
 
-# logging.basicConfig(level=logging.INFO)
+TestCase = unittest.TestCase
+
+if False:
+    logging.basicConfig(level=logging.INFO)
+    
+    class TestCase(TestCase):
+        def run(self, *args, **kwargs):
+            logging.info("%s %s", self._testMethodName, (79 - len(self._testMethodName) - 1) *"-")
+            super(TestCase, self).run(*args, **kwargs)
 
 import namespace
 import reloader
 
-class CodeReloadingTests(unittest.TestCase):
-    mockedNamespaces = None
+class CodeReloadingUseCases(TestCase):
     codeReloader = None
 
     def setUp(self):
         pass
 
     def tearDown(self):
-        # Restore all the mocked namespace entries.
-        if self.mockedNamespaces is not None:
-            for namespacePath, replacedValue in self.mockedNamespaces.iteritems():
-                moduleNamespace, attributeName = namespacePath.rsplit(".", 1)
-                module = __import__(moduleNamespace)
-                setattr(module, attributeName, replacedValue)
-
         if self.codeReloader is not None:
             for dirPath in self.codeReloader.directoriesByPath.keys():
                 self.codeReloader.RemoveDirectory(dirPath)
-
-    def InsertMockNamespaceEntry(self, namespacePath, replacementValue):
-        if self.mockedNamespaces is None:
-            self.mockedNamespaces = {}
-
-        # Avoid the case where we leak and reuse our mock class by keeping
-        # the first value we stored around as the original.
-        if namespacePath not in self.mockedNamespaces:
-            moduleNamespace, attributeName = namespacePath.rsplit(".", 1)
-            module = __import__(moduleNamespace)
-            self.mockedNamespaces[namespacePath] = getattr(module, attributeName)
-
-        namespace.ScriptDirectory = replacementValue
 
     def ReloadScriptFile(self, dirHandler, scriptDirPath, scriptFileName):
         # Get a reference to the original script file object.
         scriptPath = os.path.join(scriptDirPath, scriptFileName)
         oldScriptFile = dirHandler.FindScript(scriptPath)
-        self.failUnless(isinstance(oldScriptFile, namespace.ScriptFile), "Unable to locate the example script")
+        self.failUnless(oldScriptFile is not None, "Failed to find the existing loaded script file version")
+        self.failUnless(isinstance(oldScriptFile, reloader.ReloadableScriptFile), "Obtained non-reloadable script file object")
 
-        # Now we need to create a fresh object for the same script file.
-        newScriptFile = dirHandler.LoadScript(scriptPath, oldScriptFile.namespacePath)
+        result = self.codeReloader.ReloadScript(oldScriptFile)
+        self.failUnless(result is True, "Failed to reload the script file")
 
-        # Run the new script object and inject its contents into the namespace,
-        # overwriting the original injection from the original object.
-        dirHandler.UnloadScript(oldScriptFile)
-        success = dirHandler.RunScript(newScriptFile)
-        self.failUnless(success, "Failed to run the new script file object")
+        newScriptFile = dirHandler.FindScript(scriptPath)
+        self.failUnless(newScriptFile is not None, "Failed to find the script file after a reload")
+        self.failUnless(newScriptFile is not oldScriptFile, "The registered script file is still the old version")
         
         return newScriptFile
 
@@ -81,32 +67,18 @@ class CodeReloadingTests(unittest.TestCase):
     def UpdateGlobalReferences(self, oldBaseClass, newBaseClass):
         """
         References to the old version of the class might be held in global dictionaries.
-        - Do not replace the reference to the old class, if it is held in the
-          its own file.
         - Do not worry about replacing references held in local dictionaries, as this
-          is not possible.
+          is not possible.  Those references are held by the relevant frames.
 
-        So, just replace all references held in dictionaries.  We're avoiding replacing
-        the case which shouldn't be replaced, so this should be safe.
+        So, just replace all references held in dictionaries.  This will hit
         """
         import gc, types
         for ob1 in gc.get_referrers(oldBaseClass):
-            # Class '__bases__' references are stored in a tuple.
             if type(ob1) is dict:
-                for ob2 in gc.get_referrers(ob1):
-                    if type(ob2) is dict:
-                        for ob3 in gc.get_referrers(ob2):
-                            if type(ob3) is types.InstanceType:
-                                # Ignore originating globals dictionary.
-                                if oldBaseClass.__file__ == ob3.filePath:
-                                    continue
-
-                                keyList = []
-                                for k, v in ob1.iteritems():
-                                    if v is oldBaseClass:
-                                        keyList.append(k)
-                                for k in keyList:
-                                    ob1[k] = newBaseClass
+                for k, v in ob1.items():
+                    if v is oldBaseClass:
+                        logging.info("Setting '%s' to '%s' in %d", k, newBaseClass, id(ob1))
+                        ob1[k] = newBaseClass
 
     def testOverwriteDifferentFileBaseClassReload(self):
         """
@@ -140,7 +112,7 @@ class CodeReloadingTests(unittest.TestCase):
 
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader(leakRemovedAttributes=False)
         dirHandler = cr.AddDirectory("game", scriptDirPath)
 
         import game
@@ -244,7 +216,9 @@ class CodeReloadingTests(unittest.TestCase):
         #newStyleGlobalReferenceClassInstance3.FuncSuper()
         newStyleClassReferenceClassInstance3.Func()
 
+        logging.info("Test updating global references for 'game.OldStyleBase'")
         self.UpdateGlobalReferences(oldStyleClass, game.OldStyleBase)
+        logging.info("Test updating global references for 'game.NewStyleBase'")
         self.UpdateGlobalReferences(newStyleClass, game.NewStyleBase)
 
         ### All calls on instances created at any point, should now work.
@@ -376,12 +350,37 @@ class CodeReloadingTests(unittest.TestCase):
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
 
+class CodeReloaderTests(TestCase):
+    mockedNamespaces = None
+
+    def tearDown(self):
+        # Restore all the mocked namespace entries.
+        if self.mockedNamespaces is not None:
+            for namespacePath, replacedValue in self.mockedNamespaces.iteritems():
+                moduleNamespace, attributeName = namespacePath.rsplit(".", 1)
+                module = __import__(moduleNamespace)
+                setattr(module, attributeName, replacedValue)
+
+    def InsertMockNamespaceEntry(self, namespacePath, replacementValue):
+        if self.mockedNamespaces is None:
+            self.mockedNamespaces = {}
+
+        moduleNamespace, attributeName = namespacePath.rsplit(".", 1)
+        module = __import__(moduleNamespace)
+
+        # Store the old value.
+        if namespacePath not in self.mockedNamespaces:
+            self.mockedNamespaces[namespacePath] = getattr(module, attributeName)
+
+        setattr(module, attributeName, replacementValue)
+
     def testDirectoryRegistration(self):
         """
         Verify that this function returns a registered handler for a parent
         directory, if there are any above the given file path.
         """
-        self.InsertMockNamespaceEntry("namespace.ScriptDirectory", DummyClass)
+        self.InsertMockNamespaceEntry("reloader.ReloadableScriptDirectory", DummyClass)
+        self.failUnless(reloader.ReloadableScriptDirectory is DummyClass, "Failed to mock the script directory class")
 
         currentDirPath = GetCurrentDirectory()
         # Add several directories to ensure correct results are returned.
@@ -412,6 +411,7 @@ class CodeReloadingTests(unittest.TestCase):
         # Test that a bad path will not find a handler when there are valid ones for other paths.
         self.failUnless(cr.FindDirectory("unregistered path") is None, "Got a script directory handler for an unregistered path")
 
+class CodeReloadingLimitations(TestCase):
     def testLocalVariableDirectModificationLimitation(self):
         """
         Demonstrate that local variables cannot be indirectly modified via locals().
