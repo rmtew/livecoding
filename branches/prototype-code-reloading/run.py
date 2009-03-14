@@ -11,20 +11,20 @@ if __name__ == "__main__":
     if namespacePath not in sys.path:
         sys.path.append(namespacePath)
 
-TestCase = unittest.TestCase
+# Add test information to the logging output.    
+class TestCase(unittest.TestCase):
+    def run(self, *args, **kwargs):
+        logging.info("%s %s", self._testMethodName, (79 - len(self._testMethodName) - 1) *"-")
+        super(TestCase, self).run(*args, **kwargs)
 
-if False:
-    logging.basicConfig(level=logging.INFO)
-    
-    class TestCase(TestCase):
-        def run(self, *args, **kwargs):
-            logging.info("%s %s", self._testMethodName, (79 - len(self._testMethodName) - 1) *"-")
-            super(TestCase, self).run(*args, **kwargs)
+
+logging.basicConfig(level=logging.WARNING)
 
 import namespace
 import reloader
 
-class CodeReloadingUseCases(TestCase):
+
+class CodeReloadingTestCase(TestCase):
     def setUp(self):
         self.codeReloader = None
 
@@ -32,22 +32,6 @@ class CodeReloadingUseCases(TestCase):
         if self.codeReloader is not None:
             for dirPath in self.codeReloader.directoriesByPath.keys():
                 self.codeReloader.RemoveDirectory(dirPath)
-
-    def ReloadScriptFile(self, scriptDirectory, scriptDirPath, scriptFileName):
-        # Get a reference to the original script file object.
-        scriptPath = os.path.join(scriptDirPath, scriptFileName)
-        oldScriptFile = scriptDirectory.FindScript(scriptPath)
-        self.failUnless(oldScriptFile is not None, "Failed to find the existing loaded script file version")
-        self.failUnless(isinstance(oldScriptFile, reloader.ReloadableScriptFile), "Obtained non-reloadable script file object")
-
-        result = self.codeReloader.ReloadScript(oldScriptFile)
-        self.failUnless(result is True, "Failed to reload the script file")
-
-        newScriptFile = scriptDirectory.FindScript(scriptPath)
-        self.failUnless(newScriptFile is not None, "Failed to find the script file after a reload")
-        self.failUnless(newScriptFile is not oldScriptFile, "The registered script file is still the old version")
-        
-        return newScriptFile
 
     def UpdateBaseClass(self, oldBaseClass, newBaseClass):
         import gc, types
@@ -78,6 +62,31 @@ class CodeReloadingUseCases(TestCase):
                     if v is oldBaseClass:
                         logging.info("Setting '%s' to '%s' in %d", k, newBaseClass, id(ob1))
                         ob1[k] = newBaseClass
+
+
+class CodeReloadingObstacleTests(CodeReloadingTestCase):
+    """
+    Obstacles to fully working code reloading are surmountable.
+    
+    This test case is intended to demonstrate how these obstacles occur and
+    how they can be addressed.
+    """
+
+    def ReloadScriptFile(self, scriptDirectory, scriptDirPath, scriptFileName):
+        # Get a reference to the original script file object.
+        scriptPath = os.path.join(scriptDirPath, scriptFileName)
+        oldScriptFile = scriptDirectory.FindScript(scriptPath)
+        self.failUnless(oldScriptFile is not None, "Failed to find the existing loaded script file version")
+        self.failUnless(isinstance(oldScriptFile, reloader.ReloadableScriptFile), "Obtained non-reloadable script file object")
+
+        result = self.codeReloader.ReloadScript(oldScriptFile)
+        self.failUnless(result is True, "Failed to reload the script file")
+
+        newScriptFile = scriptDirectory.FindScript(scriptPath)
+        self.failUnless(newScriptFile is not None, "Failed to find the script file after a reload")
+        self.failUnless(newScriptFile is not oldScriptFile, "The registered script file is still the old version")
+        
+        return newScriptFile
 
     def testOverwriteDifferentFileBaseClassReload(self):
         """
@@ -111,7 +120,7 @@ class CodeReloadingUseCases(TestCase):
 
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader(leakRemovedAttributes=True)
+        cr = self.codeReloader = reloader.CodeReloader()
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
 
         import game
@@ -349,10 +358,13 @@ class CodeReloadingUseCases(TestCase):
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
 
-class CodeReloaderTests(TestCase):
+
+class CodeReloaderSupportTests(CodeReloadingTestCase):
     mockedNamespaces = None
 
     def tearDown(self):
+        super(CodeReloaderSupportTests, self).tearDown()
+
         # Restore all the mocked namespace entries.
         if self.mockedNamespaces is not None:
             for namespacePath, replacedValue in self.mockedNamespaces.iteritems():
@@ -410,7 +422,103 @@ class CodeReloaderTests(TestCase):
         # Test that a bad path will not find a handler when there are valid ones for other paths.
         self.failUnless(cr.FindDirectory("unregistered path") is None, "Got a script directory handler for an unregistered path")
 
-class CodeReloadingLimitations(TestCase):
+    def testAttributeLeaking(self):
+        # The name of the attribute we are going to leak as part of this test.
+        leakName = "NewStyleSubclassViaClassReference"
+    
+        scriptDirPath = GetScriptDirectory()
+        cr = self.codeReloader = reloader.CodeReloader()
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+
+        # Locate the script file object for the 'example2.py' file.
+        scriptPath = os.path.join(scriptDirPath, "example2.py")
+        oldScriptFile = scriptDirectory.FindScript(scriptPath)
+        self.failUnless(oldScriptFile is not None, "Failed to find initial script file")
+
+        namespacePath = oldScriptFile.namespacePath
+        namespace = scriptDirectory.GetNamespace(namespacePath)
+        leakingValue = getattr(namespace, leakName)
+
+        #  - Attribute is removed from a new version of the script file.
+        #    - Attribute appears in the leaked attributes dictionary of the new script file.
+        #    - Attribute is still present in the namespace.
+
+        newScriptFile1 = cr.CreateNewScript(oldScriptFile)
+        self.failUnless(newScriptFile1 is not None, "Failed to create new script file version at attempt one")
+        
+        # Pretend that the programmer deleted a class from the script since the original load.
+        del newScriptFile1.scriptGlobals[leakName]
+
+        # Replace the old script with the new version.
+        cr.UseNewScript(oldScriptFile, newScriptFile1)
+
+        self.failUnless(cr.IsAttributeLeaked(leakName), "Attribute not in leakage registry")
+
+        # Ensure that the leakage is recorded as coming from the original script.
+        leakedInVersion = cr.GetLeakedAttributeVersion(leakName)
+        self.failUnless(leakedInVersion == oldScriptFile.version, "Attribute was leaked in %d, should have been leaked in %d" % (leakedInVersion, oldScriptFile.version))
+
+        # Ensure that the leakage is left in the module.
+        self.failUnless(hasattr(namespace, leakName), "Leaked attribute no longer present")
+        self.failUnless(getattr(namespace, leakName) is leakingValue, "Leaked value differs from original value")
+
+        #  - Attribute was already leaked, and reload comes with no replacement.
+        #    - New script file has leak entry propagated from old script file.
+        #    - Attribute is still present in the namespace.
+
+        newScriptFile2 = cr.CreateNewScript(newScriptFile1)
+        self.failUnless(newScriptFile2 is not None, "Failed to create new script file version at attempt two")
+
+        # Pretend that the programmer deleted a class from the script since the original load.
+        del newScriptFile2.scriptGlobals[leakName]
+
+        # Replace the old script with the new version.
+        cr.UseNewScript(newScriptFile1, newScriptFile2)
+
+        self.failUnless(cr.IsAttributeLeaked(leakName), "Attribute not in leakage registry")
+
+        # Ensure that the leakage is recorded as coming from the original script.
+        leakedInVersion = cr.GetLeakedAttributeVersion(leakName)
+        self.failUnless(leakedInVersion == oldScriptFile.version, "Attribute was leaked in %d, should have been leaked in %d" % (leakedInVersion, oldScriptFile.version))
+
+        # Ensure that the leakage is left in the module.
+        self.failUnless(hasattr(namespace, leakName), "Leaked attribute no longer present")
+        self.failUnless(getattr(namespace, leakName) is leakingValue, "Leaked value differs from original value")
+
+        #  - Attribute was already leaked, and reload comes with an invalid replacement.
+        #    - Reload is rejected.
+        logging.warn("TODO, implement leakage compatibility case")
+
+        #  - Attribute was already leaked, and reload comes with a valid replacement.
+        #    - New script file lacks leak entry for attribute.
+        #    - Attribute in namespace is value from new script file.
+
+        newScriptFile3 = cr.CreateNewScript(newScriptFile2)
+        self.failUnless(newScriptFile3 is not None, "Failed to create new script file version at attempt two")
+
+        # Replace the old script with the new version.
+        cr.UseNewScript(newScriptFile2, newScriptFile3)
+        
+        newValue = newScriptFile3.scriptGlobals[leakName]
+
+        self.failUnless(not cr.IsAttributeLeaked(leakName), "Attribute still in leakage registry")
+
+        # Ensure that the leakage is left in the module.
+        self.failUnless(hasattr(namespace, leakName), "Leaking attribute no longer present in the namespace")
+        self.failUnless(getattr(namespace, leakName) is not leakingValue, "Leaked value is still contributed to the namespace")
+        self.failUnless(getattr(namespace, leakName) is newValue, "New value is not contributed to the namespace")
+
+        # Conclusion: Attribute leaking happens and is rectified.
+
+
+class CodeReloadingLimitationTests(TestCase):
+    """
+    There are limitations to how well code reloading can work.
+    
+    This test case is intended to highlight these limitations so that they
+    are known well enough to be worked with.
+    """
+
     def testLocalVariableDirectModificationLimitation(self):
         """
         Demonstrate that local variables cannot be indirectly modified via locals().

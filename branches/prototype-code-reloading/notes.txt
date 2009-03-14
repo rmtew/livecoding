@@ -3,9 +3,17 @@ A moderately thorough exploration of code reloading within the Python runtime
 ==============================================================================
 = WORKING NOTES: 13.03.2009
 
-TBD
-- See preceding set of notes.
-- Compatibility checks.
+TODO
+- When script replacement compatibility checking is added:
+  - Flesh out the checks in the leakage unit test.
+
+ATTRIBUTE LEAKING
+- Refactored code reloading module to separate script reloading functionality.
+- Wrote leakage unit test.
+- Refactored attribute leakage into the code reloading module from the script class.
+
+THOUGHTS ON COMPATIBILITY CHECKS
+- 
 
 ==============================================================================
 = WORKING NOTES: 12.03.2009
