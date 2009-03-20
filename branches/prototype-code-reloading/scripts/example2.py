@@ -1,3 +1,5 @@
+# Purpose: Implement subclasses in order to test inheritance.
+
 import game
 
 OldStyleBase = game.OldStyleBase

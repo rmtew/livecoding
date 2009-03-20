@@ -1,3 +1,4 @@
+# Purpose: Implement base classes in order to test inheritance.
 
 class OldStyleBase:
     def __init__(self, *args, **kwargs):
