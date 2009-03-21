@@ -5,9 +5,13 @@ A moderately thorough exploration of code reloading within the Python runtime
 
 TODO LIST
 - Implement the update approach.
-- Unit test the arguments are updated.
 - File change events.
   - Hook up the library from the old library.
+- Unit tests to demonstrate the scope of the reload builtin.
+
+NOTES ON THE UPDATE IN PLACE APPOACH
+- Need a custom unit test to verify function arguments are updated.
+- Need a custom unit test to verify that the linecache is not an issue.
 
 ==============================================================================
 = WORKING NOTES: 19.03.2009
@@ -44,7 +48,6 @@ NOTES ON THE UPDATE APPROACH
       - If there is an old value.
         - Identify all the attributes on the old class which are not on the new class.
         - Delete them from the old class.
-        - NEXT ITERATION.
       - Iterate over the attributes on the new class.
         - If an attribute is of type FunctionType.
           - Rebind it to the old locals.

@@ -132,8 +132,8 @@ class CodeReloader:
             # Remove as leaks the attributes the new version contributed.
             self.RemoveLeakedAttributes(oldScriptFile)
 
-    def UpdateModuleAttributes(self, oldScriptFile, newScriptFile, namespace, overwritableAttributes=set()):
-        logging.info("UpdateModuleAttributes")
+    def UpdateModuleAttributes(self, scriptFile, newScriptFile, namespace, overwritableAttributes=set()):
+        logging.debug("UpdateModuleAttributes")
 
         moduleName = namespace.__name__
         filePath = newScriptFile.filePath
@@ -142,34 +142,66 @@ class CodeReloader:
         if filePath not in namespace.__file__:
             logging.error("On an update, a script file's path is expected to have already been registered")
 
+        attributeChanges = {}
+
+        # Collect existing values for entries.
+        for k, v, valueType in scriptFile.GetExportableAttributes():
+            attributeChanges[k] = [ (v, valueType), (None, None) ]
+
+        # Collect entries for the attributes contributed by the new script file.
+        for k, v, valueType in newScriptFile.GetExportableAttributes():
+            if k not in attributeChanges:
+                attributeChanges[k] = [ (None, None), (v, valueType) ]
+            else:
+                attributeChanges[k][1] = (v, valueType)
+
+        globals_ = scriptFile.scriptGlobals
+        for attrName, ((oldValue, oldType), (newValue, newType)) in attributeChanges.iteritems():
+            # No new value -> the old value is being leaked.
+            if newValue is None:
+                continue
+
+            if newType is types.ClassType or newType is types.TypeType:
+                self.UpdateClass(oldValue, newValue, globals_)
+
+                # If there was an old value, it is updated.
+                if oldValue is not None:
+                    continue
+                # Otherwise, the new value is being added.
+            elif oldType is newType and oldValue == newValue:
+                # Skip constants whose value has not changed.
+                continue
+            elif isinstance(newValue, types.FunctionType):
+                newValue = RebindFunction(newValue, globals_)
+            elif isinstance(newValue, types.UnboundMethodType) or isinstance(newValue, types.MethodType):
+                logging.warning("Rebound method '%s' to function", attrName)
+                newValue = RebindFunction(newValue.im_func, globals_)
+
+            globals_[attrName] = newValue
+
+        # TODO: Leakage.
+
         contributedAttributes = set()
+        scriptFile.SetContributedAttributes(contributedAttributes)
 
-        if False:
-            for k, v, valueType in scriptFile.GetExportableAttributes():
-                # By default we never overwrite.  This way we can identify duplicate contributions.
-                if hasattr(namespace, k):
-                    if k not in overwritableAttributes:
-                        logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
-                        continue
+    def UpdateClass(self, value, newValue, globals_):
+        if value is None:
+            value = newValue
 
-                if valueType in (types.ClassType, types.TypeType):
-                    pass
-                elif isinstance(v, (types.UnboundMethodType, types.FunctionType, types.MethodType)):
-                    if isinstance(v, types.FunctionType):
-                        v = RebindFunction(v, oldLocals)
-                        pass
-                    elif hasattr(v, "im_func"):
-                        pass
+        logging.debug("Updating class %s", value.__name__)
 
-                    setattr(namespace, k, v)
+        for attrName, attrValue in newValue.__dict__.iteritems():
+            if isinstance(attrValue, types.FunctionType):
+                newAttrValue = RebindFunction(attrValue, globals_)
+            elif isinstance(attrValue, types.UnboundMethodType) or isinstance(attrValue, types.MethodType):
+                newAttrValue = RebindFunction(attrValue.im_func, globals_)
+            elif value is not newValue:
+                newAttrValue = attrValue
+            else:
+                continue
 
-                logging.info("InsertModuleAttribute %s.%s", moduleName, k)
-
-                pass
-
-                contributedAttributes.add(k)
-
-        oldScriptFile.SetContributedAttributes(contributedAttributes)
+            logging.debug("setting %s %s", attrName, attrValue)
+            setattr(value, attrName, attrValue)
 
     # ------------------------------------------------------------------------
     # Leaked attribute support
@@ -216,4 +248,11 @@ class ReloadableScriptFile(namespace.ScriptFile):
 
 class ReloadableScriptDirectory(namespace.ScriptDirectory):
     scriptFileClass = ReloadableScriptFile
+
+
+def RebindFunction(function, globals_):
+    newFunction = types.FunctionType(function.func_code, globals_, function.func_name, function.func_defaults)
+    newFunction.__doc__= function.__doc__
+    newFunction.__dict__.update(function.__dict__)
+    return newFunction
 
