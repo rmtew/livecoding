@@ -63,6 +63,23 @@ class ScriptFile(object):
         if flush:
             self.lastError = None
 
+    def GetExportableAttributes(self):
+        for k, v in self.scriptGlobals.iteritems():
+            if k == "__builtins__":
+                continue
+
+            valueType = type(v)
+            # Modules will have been imported from elsewhere.
+            if valueType is types.ModuleType:
+                continue
+
+            if valueType in (types.ClassType, types.TypeType):
+                # Classes with valid modules will have been imported from elsewhere.
+                if v.__module__ != "__builtin__":
+                    continue
+
+            yield k, v, valueType
+
 
 class ScriptDirectory(object):
     scriptFileClass = ScriptFile
@@ -240,7 +257,7 @@ class ScriptDirectory(object):
         logging.info("RunScript:Ran '%s'", scriptFile.filePath)
 
         namespace = self.CreateNamespace(scriptFile.namespacePath, scriptFile.filePath)
-        self.InsertModuleAttributes(scriptFile, namespace)
+        self.SetModuleAttributes(scriptFile, namespace)
 
         return True
 
@@ -250,7 +267,7 @@ class ScriptDirectory(object):
             return True
         return False            
 
-    def InsertModuleAttributes(self, scriptFile, namespace, overwritableAttributes=set()):
+    def SetModuleAttributes(self, scriptFile, namespace, overwritableAttributes=set()):
         moduleName = namespace.__name__
         
         # Track what files have contributed to the namespace.
@@ -260,29 +277,18 @@ class ScriptDirectory(object):
             namespace.__file__ += scriptFile.filePath
 
         contributedAttributes = set()
-        for k, v in scriptFile.scriptGlobals.iteritems():
-            if k == "__builtins__":
-                continue
-
-            valueType = type(v)
-            # Modules will have been imported from elsewhere.
-            if valueType is types.ModuleType:
-                continue
-
-            if valueType in (types.ClassType, types.TypeType):
-                # Classes with valid modules will have been imported from elsewhere.
-                if v.__module__ != "__builtin__":
-                    continue
-
-                v.__module__ = moduleName
-                v.__file__ = scriptFile.filePath
-
+        for k, v, valueType in scriptFile.GetExportableAttributes():
             # By default we never overwrite.  This way we can identify duplicate contributions.
             if hasattr(namespace, k) and k not in overwritableAttributes:
                 logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
                 continue
 
             logging.info("InsertModuleAttribute %s.%s", moduleName, k)
+
+            if valueType in (types.ClassType, types.TypeType):
+                v.__module__ = moduleName
+                v.__file__ = scriptFile.filePath
+
             setattr(namespace, k, v)
             contributedAttributes.add(k)
 
@@ -298,35 +304,9 @@ class ScriptDirectory(object):
         namespace.__file__ = ";".join(paths)
 
         for k in scriptFile.contributedAttributes:
-            # Is the attribute still in use?
-            # self.PrintNamespaceEntryReferers(scriptFile, namespace, k)
             delattr(namespace, k)
 
         return True
-
-    def PrintNamespaceEntryReferers(self, scriptFile, namespace, k):
-        return
-        v = getattr(namespace, k)
-        import gc
-        print "VALUE", v
-        for ob1 in gc.get_referrers(v):
-            # Ignore this function as a known referer.
-            if ob1 is sys._getframe():
-                continue
-
-            # Ignore the namespace as a known referer.
-            if ob1 is namespace.__dict__:
-                continue
-
-            # Ignore the contributing script file as a known referer.
-            if ob1 is scriptFile.scriptGlobals:
-                continue
-
-            if type(ob1) is dict:
-                print type(ob1), len(ob1)
-                print ob1.keys()
-            else:
-                print type(ob1), ob1
 
 
 if __name__ == "__main__":

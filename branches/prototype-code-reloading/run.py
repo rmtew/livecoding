@@ -14,11 +14,11 @@ if __name__ == "__main__":
 # Add test information to the logging output.    
 class TestCase(unittest.TestCase):
     def run(self, *args, **kwargs):
-        logging.info("%s %s", self._testMethodName, (79 - len(self._testMethodName) - 1) *"-")
+        logging.debug("%s %s", self._testMethodName, (79 - len(self._testMethodName) - 1) *"-")
         super(TestCase, self).run(*args, **kwargs)
 
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.WARN)
 
 import namespace
 import reloader
@@ -60,7 +60,7 @@ class CodeReloadingTestCase(TestCase):
             if type(ob1) is dict:
                 for k, v in ob1.items():
                     if v is oldBaseClass:
-                        logging.info("Setting '%s' to '%s' in %d", k, newBaseClass, id(ob1))
+                        logging.debug("Setting '%s' to '%s' in %d", k, newBaseClass, id(ob1))
                         ob1[k] = newBaseClass
 
 
@@ -72,19 +72,46 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
     how they can be addressed.
     """
 
-    def ReloadScriptFile(self, scriptDirectory, scriptDirPath, scriptFileName):
+    def ReloadScriptFile(self, scriptDirectory, scriptDirPath, scriptFileName, mangleCallback=None):
         # Get a reference to the original script file object.
         scriptPath = os.path.join(scriptDirPath, scriptFileName)
         oldScriptFile = scriptDirectory.FindScript(scriptPath)
         self.failUnless(oldScriptFile is not None, "Failed to find the existing loaded script file version")
         self.failUnless(isinstance(oldScriptFile, reloader.ReloadableScriptFile), "Obtained non-reloadable script file object")
 
-        result = self.codeReloader.ReloadScript(oldScriptFile)
+        # Replace and wrap the builtin.
+        if mangleCallback:
+            def intermediateOpen(openFileName, *args, **kwargs):
+                # The flag needs to be in a place where we can modify it from here.
+                replacedScriptFileContents[0] = True
+
+                replacementFileName = mangleCallback(openFileName)
+                logging.debug("Mangle file interception %s", openFileName)
+                logging.debug("Mangle file substitution %s", replacementFileName)
+                return oldOpenBuiltin(replacementFileName, *args, **kwargs)
+
+            oldOpenBuiltin = __builtins__.open
+            __builtins__.open = intermediateOpen
+            try:
+                replacedScriptFileContents = [ False ]
+                result = self.codeReloader.ReloadScript(oldScriptFile)
+            finally:
+                __builtins__.open = oldOpenBuiltin
+
+            # Verify that fake script contents were injected as requested.
+            self.failUnless(replacedScriptFileContents[0] is True, "Failed to inject the replacement script file")
+        else:
+            result = self.codeReloader.ReloadScript(oldScriptFile)
+
         self.failUnless(result is True, "Failed to reload the script file")
 
         newScriptFile = scriptDirectory.FindScript(scriptPath)
         self.failUnless(newScriptFile is not None, "Failed to find the script file after a reload")
-        self.failUnless(newScriptFile is not oldScriptFile, "The registered script file is still the old version")
+
+        if self.codeReloader.mode == reloader.MODE_OVERWRITE:
+            self.failUnless(newScriptFile is not oldScriptFile, "The registered script file is still the old version")
+        elif self.codeReloader.mode == reloader.MODE_UPDATE:
+            self.failUnless(newScriptFile is oldScriptFile, "The registered script file is no longer the old version")
         
         return newScriptFile
 
@@ -120,7 +147,7 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
 
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE)
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
 
         import game
@@ -149,7 +176,7 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         newStyleGlobalReferenceClassInstance1.FuncSuper()
         newStyleClassReferenceClassInstance1.Func()
 
-        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "example.py")
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py")
 
         ## Call functions on the instances created pre-reload.
         self.failUnlessRaises(TypeError, oldStyleNamespaceClassInstance1.Func)  # A
@@ -224,9 +251,9 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         #newStyleGlobalReferenceClassInstance3.FuncSuper()
         newStyleClassReferenceClassInstance3.Func()
 
-        logging.info("Test updating global references for 'game.OldStyleBase'")
+        logging.debug("Test updating global references for 'game.OldStyleBase'")
         self.UpdateGlobalReferences(oldStyleClass, game.OldStyleBase)
-        logging.info("Test updating global references for 'game.NewStyleBase'")
+        logging.debug("Test updating global references for 'game.NewStyleBase'")
         self.UpdateGlobalReferences(newStyleClass, game.NewStyleBase)
 
         ### All calls on instances created at any point, should now work.
@@ -294,7 +321,7 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         versions of a class, still work.
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE)
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
         
         import game
@@ -317,7 +344,7 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
 
-        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "example.py")
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py")
 
         # Verify that the original classes were replaced with new versions.
         self.failUnless(oldStyleBaseClass is not game.OldStyleBase, "Failed to replace the original 'game.OldStyleBase' class")
@@ -357,6 +384,60 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         newStyleBaseClassInstance.Func()
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
+
+    def xtestUpdateSameFileClassReload(self):
+        """
+        Reloading approach: Update old objects on reload.
+        Reloading scope: Same file.
+        
+        1. Get references to the exported classes.
+        2. Instantiate an instance from each class.
+        3. Call the functions exposed by each instance.
+
+        4. Reload the script the classes were exported from.
+
+        5. Verify that the old classes were replaced with new ones.
+        6. Call the functions exposed by each old class instance.
+        7. Instantiate an instance of each new class.
+        8. Call the functions exposed by each new class instance.
+
+        This verifies that instances linked to old superceded
+        versions of a class, still work.
+        """
+        scriptDirPath = GetScriptDirectory()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        
+        import game
+
+        # Obtain references and instances for the classes defined in the script.
+        oldStyleBaseClass = game.OldStyleBase
+        oldStyleBaseClassInstance = oldStyleBaseClass()
+        oldStyleClass = game.OldStyle
+        oldStyleClassInstance = oldStyleClass()
+
+        newStyleBaseClass = game.NewStyleBase
+        newStyleBaseClassInstance = newStyleBaseClass()
+        newStyleClass = game.NewStyle
+        newStyleClassInstance = newStyleClass()
+
+        # Verify that the exposed method can be called on each.
+        oldStyleBaseClassInstance.Func()
+        oldStyleClassInstance.Func()
+        newStyleBaseClassInstance.Func()
+        newStyleClassInstance.Func()
+        newStyleClassInstance.FuncSuper()
+
+        cb = MakeMangleFilenameCallback("inheritanceSuperclasses.py")
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
+
+        # Verify that the original classes were replaced with new versions.
+        self.failUnless(oldStyleBaseClass is game.OldStyleBase, "Failed to keep the original 'game.OldStyleBase' class")
+        self.failUnless(oldStyleClass is game.OldStyle, "Failed to keep the original 'game.OldStyle' class")
+        self.failUnless(newStyleBaseClass is game.NewStyleBase, "Failed to keep the original 'game.NewStyleBase' class")
+        self.failUnless(newStyleClass is game.NewStyle, "Failed to keep the original 'game.NewStyle' class")
+
+        # ...
 
 
 class CodeReloaderSupportTests(CodeReloadingTestCase):
@@ -427,11 +508,11 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         leakName = "NewStyleSubclassViaClassReference"
     
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE)
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
 
-        # Locate the script file object for the 'example2.py' file.
-        scriptPath = os.path.join(scriptDirPath, "example2.py")
+        # Locate the script file object for the 'inheritanceSubclasses.py' file.
+        scriptPath = os.path.join(scriptDirPath, "inheritanceSubclasses.py")
         oldScriptFile = scriptDirectory.FindScript(scriptPath)
         self.failUnless(oldScriptFile is not None, "Failed to find initial script file")
 
@@ -600,6 +681,15 @@ class DummyClass:
         instance.attrName = attrName
         instance.defaultValue = defaultValue
         return instance
+
+def MakeMangleFilenameCallback(newFileName):
+    """
+    Encapsulate substituting a different script name.
+    """
+    def MangleFilenameCallback(scriptPath, newFileName):
+        dirPath = os.path.dirname(scriptPath).replace("scripts", "scripts2")
+        return os.path.join(dirPath, newFileName)
+    return lambda scriptPath: MangleFilenameCallback(scriptPath, newFileName)
 
 def GetCurrentDirectory():
     # There's probably a better way of doing this.

@@ -1,6 +1,85 @@
 A moderately thorough exploration of code reloading within the Python runtime
 
 ==============================================================================
+= WORKING NOTES: 20.03.2009
+
+TODO LIST
+- Implement the update approach.
+- Unit test the arguments are updated.
+- File change events.
+  - Hook up the library from the old library.
+
+==============================================================================
+= WORKING NOTES: 19.03.2009
+
+PRIORITIES
+- Implement the update approach.
+- File change events.
+  - Hook up the library from the old library.
+
+NOTES ON THE UPDATE APPROACH
+- Algorithm:
+  - Get the list of globals from the old script file.
+  - Get the list of globals from the new script file.
+  - Compile a mapping of attribute name to old value, new value.
+    - No old value means None as first entry.
+    - No new value means None as second entry.
+  - Iterate over the mapping.
+    - No new value.
+      - Leaking old value.
+      - NEXT ITERATION.
+    - If the new value is not a class (does not subclass ClassType or TypeType).
+      - If there is an old value and it is the same as the new value.
+        - NEXT ITERATION.
+      - If the new value is of type FunctionType.
+        - Rebind it to the old locals.
+      - If the new value is of type UnboundMethod or BoundMethod.
+        - Rebind its 'im_func' to the old locals.
+      - Set the new value of the attribute.
+      - NEXT ITERATION.
+    - New value must be a class.
+      - Where there is no old class, no storing is needed.
+      - Skip modules.
+      - Skip classes where the module is '__builtin__'.
+      - If there is an old value.
+        - Identify all the attributes on the old class which are not on the new class.
+        - Delete them from the old class.
+        - NEXT ITERATION.
+      - Iterate over the attributes on the new class.
+        - If an attribute is of type FunctionType.
+          - Rebind it to the old locals.
+          - Store it on the old class.
+        - If the attribute is of type UnboundMethod or BoundMethod.
+          - Rebind its 'im_func' to the old locals.
+          - Store it on the old class.
+        - Otherwise.
+          - Store the attribute on the old class.
+
+TODO
+- When script replacement compatibility checking is added:
+  - Flesh out the checks in the leakage unit test.
+
+==============================================================================
+= WORKING NOTES: 17.03.2009
+
+PRIORITIES
+- Implement an update reload method.
+  - The CodeReloadingObstacleTests test case ReloadScriptFile just calls ReloadScript on the code reloader.  This internally just does the overwrite method.
+  - If I flesh out ReloadScript to do either method, then I might be able to duplicate the existing overwrite related tests and adapt them.
+  - Renamed AddModuleAttributes in the namespace script directory handler to SetModuleAttributes.
+  - Added a UpdateModuleAttributes to the reloader class.  This is really just reloading related and belongs there, rather than in the namespacing class.
+    - Copy SetModuleAttributes and change it.
+    - Need to write a whole class and function updating thing.
+- File change events.
+  - Hook up the library from the old library?
+
+TODO
+- When script replacement compatibility checking is added:
+  - Flesh out the checks in the leakage unit test.
+- When UpdateModuleAttributes is working
+  - Remove attribute filtering duplication between it and SetModuleAttributes.
+
+==============================================================================
 = WORKING NOTES: 13.03.2009
 
 TODO
@@ -11,9 +90,6 @@ ATTRIBUTE LEAKING
 - Refactored code reloading module to separate script reloading functionality.
 - Wrote leakage unit test.
 - Refactored attribute leakage into the code reloading module from the script class.
-
-THOUGHTS ON COMPATIBILITY CHECKS
-- 
 
 ==============================================================================
 = WORKING NOTES: 12.03.2009
