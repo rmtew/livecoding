@@ -417,7 +417,6 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         oldStyleClassFunc = oldStyleClass.Func
         newStyleBaseClassFunc = newStyleBaseClass.Func
         newStyleClassFunc = newStyleClass.Func
-        newStyleClassFuncSuper = newStyleClass.FuncSuper
 
         # cb = MakeMangleFilenameCallback("inheritanceSuperclasses.py")
         # mangleCallback=cb
@@ -436,7 +435,6 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         self.failUnless(oldStyleClassFunc.im_func is not oldStyleClass.Func.im_func, "Class function not updated in place")
         self.failUnless(newStyleBaseClassFunc.im_func is not newStyleBaseClass.Func.im_func, "Class function not updated in place")
         self.failUnless(newStyleClassFunc.im_func is not newStyleClass.Func.im_func, "Class function not updated in place")
-        self.failUnless(newStyleClassFuncSuper.im_func is not newStyleClass.FuncSuper.im_func, "Class function not updated in place")
 
     def testUpdateSameFileClassReload_ClassRemoval(self):
         """
@@ -470,7 +468,6 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         oldStyleClassFunc = oldStyleClass.Func
         newStyleBaseClassFunc = newStyleBaseClass.Func
         newStyleClassFunc = newStyleClass.Func
-        newStyleClassFuncSuper = newStyleClass.FuncSuper
 
         cb = MakeMangleFilenameCallback("inheritanceSuperclasses_ClassRemoval.py")
         newScriptFile = self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
@@ -487,10 +484,36 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         self.failUnless(oldStyleBaseClassFunc.im_func is not oldStyleBaseClass.Func.im_func, "Class function not updated in place")
         self.failUnless(newStyleBaseClassFunc.im_func is not newStyleBaseClass.Func.im_func, "Class function not updated in place")
         self.failUnless(newStyleClassFunc.im_func is not newStyleClass.Func.im_func, "Class function not updated in place")
-        self.failUnless(newStyleClassFuncSuper.im_func is not newStyleClass.FuncSuper.im_func, "Class function not updated in place")
 
         # All classes which have been leaked should remain unchanged.
         self.failUnless(oldStyleClassFunc.im_func is oldStyleClass.Func.im_func, "Class function not updated in place")
+
+    def testUpdateSameFileClassReload_ClassFunctionAddition(self):
+        pass
+
+    def testUpdateSameFileClassReload_ClassFunctionRemoval(self):
+        pass
+
+    def testUpdateSameFileClassReload_ClassAddition(self):
+        pass
+
+    def testUpdateSameFileClassReload_ClassRemoval(self):
+        pass
+
+    def xtestUpdateSameFileClassReload_FunctionUpdate(self):
+        scriptDirPath = GetScriptDirectory()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        
+        import game
+
+        # Obtain references and instances for the classes defined in the script.
+        testFunction = game.TestFunction
+        testFunction_PositionalArguments = game.TestFunction_PositionalArguments
+        testFunction_KeywordArguments = game.TestFunction_KeywordArguments
+
+        cb = MakeMangleFilenameCallback("function_Update.py")
+        newScriptFile = self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
 
 
 class CodeReloaderSupportTests(CodeReloadingTestCase):

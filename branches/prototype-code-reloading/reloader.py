@@ -201,7 +201,8 @@ class CodeReloader:
                 # __doc__: On new-style classes, this cannot be overwritten.
                 # __dict__: This makes no sense to overwrite.
                 # __module__: Don't clobber the proper module name with '__builtin__'.
-                if attrName in ("__doc__", "__dict__", "__module__"):
+                # __weakref__: This makes no sense to overwrite.
+                if attrName in ("__doc__", "__dict__", "__module__", "__weakref__"):
                     continue
 
                 if value is not newValue:

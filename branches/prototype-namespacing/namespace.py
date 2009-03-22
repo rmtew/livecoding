@@ -45,7 +45,10 @@ class ScriptFile(object):
         self.scriptGlobals = {}
         try:
             eval(self.codeObject, self.scriptGlobals, self.scriptGlobals)
-        except ImportError:
+        except (ImportError, AttributeError):
+            # Likely reasons for encountered errors:
+            #  ImportError: A namespace has not been exported yet.
+            #  AttributeError: A namespace attribute is not exported yet.
             self.lastError = traceback.format_exception(*sys.exc_info())
             return False
 
