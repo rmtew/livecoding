@@ -500,7 +500,20 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
     def testUpdateSameFileClassReload_ClassRemoval(self):
         pass
 
-    def xtestUpdateSameFileClassReload_FunctionUpdate(self):
+    def testUpdateSameFileClassReload_FunctionUpdate(self):
+        """
+        Reloading approach: Update old objects on reload.
+        Reloading scope: Same file.
+        
+        1. Get references to the exported functions.
+
+        2. Reload the script the classes were exported from.
+
+        3. Verify the old functions have been replaced.
+        4. Verify the functions are callable.
+
+        This verifies that new contributions are put in place.
+        """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
@@ -512,9 +525,33 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         testFunction_PositionalArguments = game.TestFunction_PositionalArguments
         testFunction_KeywordArguments = game.TestFunction_KeywordArguments
 
-        cb = MakeMangleFilenameCallback("function_Update.py")
-        newScriptFile = self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
+        cb = MakeMangleFilenameCallback("functions_Update.py")
+        newScriptFile = self.ReloadScriptFile(scriptDirectory, scriptDirPath, "functions.py", mangleCallback=cb)
 
+        self.failUnless(testFunction is not game.TestFunction, "Function not updated by reload")
+        self.failUnless(testFunction_PositionalArguments is not game.TestFunction_PositionalArguments, "Function not updated by reload")
+        self.failUnless(testFunction_KeywordArguments is not game.TestFunction_KeywordArguments, "Function not updated by reload")
+
+        ## Verify that the old functions still work, in case things hold onto references past reloads.
+        ret = testFunction("testarg1")
+        self.failUnless(ret[0] == "testarg1", "Old function failed after reload")
+        
+        ret = testFunction_PositionalArguments("testarg1", "testarg2", "testarg3")
+        self.failUnless(ret[0] == "testarg1" and ret[1] == ("testarg2", "testarg3"), "Old function failed after reload")
+        
+        ret = testFunction_KeywordArguments(testarg1="testarg1")
+        self.failUnless(ret[0] == "arg1" and ret[1] == {"testarg1":"testarg1"}, "Old function failed after reload")
+
+        ## Verify that the new functions work.
+        ret = game.TestFunction("testarg1")
+        self.failUnless(ret[0] == "testarg1", "Updated function failed after reload")
+        
+        ret = game.TestFunction_PositionalArguments("testarg1", "testarg2", "testarg3")
+        self.failUnless(ret[0] == "testarg1" and ret[1] == ("testarg2", "testarg3"), "Updated function failed after reload")
+        
+        ret = game.TestFunction_KeywordArguments(testarg1="testarg1")
+        self.failUnless(ret[0] == "newarg1" and ret[1] == {"testarg1":"testarg1"}, "Updated function failed after reload")
+        
 
 class CodeReloaderSupportTests(CodeReloadingTestCase):
     mockedNamespaces = None

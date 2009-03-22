@@ -40,6 +40,9 @@ class ScriptFile(object):
 
     def SetContributedAttributes(self, contributedAttributes):
         self.contributedAttributes = contributedAttributes
+
+    def AddContributedAttributes(self, contributedAttributes):
+        self.contributedAttributes |= contributedAttributes
         
     def Run(self):
         self.scriptGlobals = {}

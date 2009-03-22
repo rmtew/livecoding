@@ -18,6 +18,8 @@ import namespace
 MODE_OVERWRITE = 1
 MODE_UPDATE = 2
 
+class NonExistentValue: pass
+
 class CodeReloader:
     def __init__(self, mode=MODE_OVERWRITE):
         self.mode = mode
@@ -130,7 +132,7 @@ class CodeReloader:
             self.UpdateModuleAttributes(oldScriptFile, newScriptFile, namespace, overwritableAttributes=self.leakedAttributes)
 
             # Remove as leaks the attributes the new version contributed.
-            self.RemoveLeakedAttributes(oldScriptFile)
+            self.RemoveLeakedAttributes(newScriptFile)
 
     def UpdateModuleAttributes(self, scriptFile, newScriptFile, namespace, overwritableAttributes=set()):
         logging.debug("UpdateModuleAttributes")
@@ -148,19 +150,25 @@ class CodeReloader:
         for k in scriptFile.contributedAttributes:
             v = getattr(namespace, k)
             valueType = type(v)
-            attributeChanges[k] = [ (v, valueType), (None, None) ]
+            attributeChanges[k] = [ (v, valueType), (NonExistentValue, None) ]
 
         # Collect entries for the attributes contributed by the new script file.
         for k, v, valueType in newScriptFile.GetExportableAttributes():
             if k not in attributeChanges:
-                attributeChanges[k] = [ (None, None), (v, valueType) ]
+                attributeChanges[k] = [ (NonExistentValue, None), (v, valueType) ]
             else:
                 attributeChanges[k][1] = (v, valueType)
 
+        # The globals dictionary of the retained original script file.
         globals_ = scriptFile.scriptGlobals
+
+        contributedAttributes = set()
+        leakedAttributes = set()
+
         for attrName, ((oldValue, oldType), (newValue, newType)) in attributeChanges.iteritems():
             # No new value -> the old value is being leaked.
-            if newValue is None:
+            if newValue is NonExistentValue:
+                leakedAttributes.add(attrName)
                 continue
 
             if newType is types.ClassType or newType is types.TypeType:
@@ -169,22 +177,31 @@ class CodeReloader:
                 # If there was an old value, it is updated.
                 if oldValue is not None:
                     continue
+
                 # Otherwise, the new value is being added.
+                newValue.__module__ = moduleName
+                newValue.__file__ = filePath
+
+                logging.debug("Encountered new class '%s'", attrName)
             elif oldType is newType and oldValue == newValue:
                 # Skip constants whose value has not changed.
+                logging.debug("Skippped unchanged attribute '%s'", attrName)
                 continue
             elif isinstance(newValue, types.FunctionType):
+                logging.debug("Rebound method '%s'", attrName)
                 newValue = RebindFunction(newValue, globals_)
             elif isinstance(newValue, types.UnboundMethodType) or isinstance(newValue, types.MethodType):
-                logging.warning("Rebound method '%s' to function", attrName)
+                logging.debug("Rebound method '%s' to function", attrName)
                 newValue = RebindFunction(newValue.im_func, globals_)
 
+            # Build up the retained original globals with contributions.
             globals_[attrName] = newValue
 
-        # TODO: Leakage.
+            setattr(namespace, attrName, newValue)
+            contributedAttributes.add(attrName)
 
-        contributedAttributes = set()
-        scriptFile.SetContributedAttributes(contributedAttributes)
+        scriptFile.AddContributedAttributes(contributedAttributes)
+        newScriptFile.SetContributedAttributes(contributedAttributes)
 
     def UpdateClass(self, value, newValue, globals_):
         if value is None:
@@ -254,6 +271,9 @@ class CodeReloader:
 
 class ReloadableScriptFile(namespace.ScriptFile):
     version = 1
+
+    def XXX(self, attributes):
+        pass
 
 
 class ReloadableScriptDirectory(namespace.ScriptDirectory):
