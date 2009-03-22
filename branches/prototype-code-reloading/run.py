@@ -2,6 +2,7 @@ import unittest
 import os
 import sys
 import logging
+import inspect
 
 # Temporary hack to bring in the namespace prototype.
 if __name__ == "__main__":
@@ -385,7 +386,7 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
 
-    def testUpdateSameFileClassReload_FunctionUpdate(self):
+    def testUpdateSameFileReload_ClassFunctionUpdate(self):
         """
         Reloading approach: Update old objects on reload.
         Reloading scope: Same file.
@@ -396,9 +397,9 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         3. Reload the script the classes were exported from.
 
         4. Verify the old classes have not been replaced.
-        5. Verify the functions on the classes have been replaced.
+        5. Verify the functions on the classes have been updated.
 
-        This verifies the existing classes are updated in place.
+        This verifies the existing class functions are updated in place.
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
@@ -408,35 +409,43 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
 
         # Obtain references and instances for the classes defined in the script.
         oldStyleBaseClass = game.OldStyleBase
-        oldStyleClass = game.OldStyle
         newStyleBaseClass = game.NewStyleBase
-        newStyleClass = game.NewStyle
 
         # Verify that the exposed method can be called on each.
-        oldStyleBaseClassFunc = oldStyleBaseClass.Func
-        oldStyleClassFunc = oldStyleClass.Func
-        newStyleBaseClassFunc = newStyleBaseClass.Func
-        newStyleClassFunc = newStyleClass.Func
+        oldStyleBaseClassFunc = oldStyleBaseClass.Func_Arguments1
+        newStyleBaseClassFunc = newStyleBaseClass.Func_Arguments1
 
-        # cb = MakeMangleFilenameCallback("inheritanceSuperclasses.py")
-        # mangleCallback=cb
-        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py")
+        cb = MakeMangleFilenameCallback("inheritanceSuperclasses_FunctionUpdate.py")
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
 
         ## Verify that the original classes were not replaced.
         # This is of course because their contents are updated.
         self.failUnless(oldStyleBaseClass is game.OldStyleBase, "Failed to keep the original 'game.OldStyleBase' class")
-        self.failUnless(oldStyleClass is game.OldStyle, "Failed to keep the original 'game.OldStyle' class")
         self.failUnless(newStyleBaseClass is game.NewStyleBase, "Failed to keep the original 'game.NewStyleBase' class")
-        self.failUnless(newStyleClass is game.NewStyle, "Failed to keep the original 'game.NewStyle' class")
 
         ## Verify that the functions on the classes have been updated in place.
         # All classes should have had their functions replaced.
-        self.failUnless(oldStyleBaseClassFunc.im_func is not oldStyleBaseClass.Func.im_func, "Class function not updated in place")
-        self.failUnless(oldStyleClassFunc.im_func is not oldStyleClass.Func.im_func, "Class function not updated in place")
-        self.failUnless(newStyleBaseClassFunc.im_func is not newStyleBaseClass.Func.im_func, "Class function not updated in place")
-        self.failUnless(newStyleClassFunc.im_func is not newStyleClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(oldStyleBaseClassFunc.im_func is not oldStyleBaseClass.Func_Arguments1.im_func, "Class function not updated in place")
+        self.failUnless(newStyleBaseClassFunc.im_func is not newStyleBaseClass.Func_Arguments1.im_func, "Class function not updated in place")
 
-    def testUpdateSameFileClassReload_ClassRemoval(self):
+        ## Verify that the argument names are updated
+        # Old style classes should work naturally.
+        ret1 = inspect.getargspec(oldStyleBaseClassFunc.im_func)
+        ret2 = inspect.getargspec(oldStyleBaseClass.Func_Arguments1.im_func)
+        self.failUnless(ret1 != ret2, "Function arguments somehow not updated")
+
+        ret1 = inspect.getargspec(newStyleBaseClassFunc.im_func)
+        ret2 = inspect.getargspec(newStyleBaseClass.Func_Arguments1.im_func)
+        self.failUnless(ret1 != ret2, "Function arguments somehow not updated")
+
+        ret = inspect.getargspec(oldStyleBaseClass.Func_Arguments2.im_func)
+        self.failUnless(ret.defaults == (True,), "Function argument default value not updated")
+        ret = inspect.getargspec(newStyleBaseClass.Func_Arguments2.im_func)
+        self.failUnless(ret.defaults == (True,), "Function argument default value not updated")
+
+        # Note: Actually, all this cack is updated just by the function having been replaced in-situ.
+
+    def testUpdateSameFileReload_ClassRemoval(self):
         """
         Reloading approach: Update old objects on reload.
         Reloading scope: Same file.
@@ -488,19 +497,19 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         # All classes which have been leaked should remain unchanged.
         self.failUnless(oldStyleClassFunc.im_func is oldStyleClass.Func.im_func, "Class function not updated in place")
 
-    def testUpdateSameFileClassReload_ClassFunctionAddition(self):
+    def testUpdateSameFileReload_ClassFunctionAddition(self):
         pass
 
-    def testUpdateSameFileClassReload_ClassFunctionRemoval(self):
+    def testUpdateSameFileReload_ClassFunctionRemoval(self):
         pass
 
-    def testUpdateSameFileClassReload_ClassAddition(self):
+    def testUpdateSameFileReload_ClassAddition(self):
         pass
 
-    def testUpdateSameFileClassReload_ClassRemoval(self):
+    def testUpdateSameFileReload_ClassRemoval(self):
         pass
 
-    def testUpdateSameFileClassReload_FunctionUpdate(self):
+    def testUpdateSameFileReload_FunctionUpdate(self):
         """
         Reloading approach: Update old objects on reload.
         Reloading scope: Same file.

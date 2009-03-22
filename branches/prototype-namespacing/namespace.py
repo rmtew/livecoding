@@ -164,7 +164,7 @@ class ScriptDirectory(object):
                 logging.error("Unrecognised type of directory entry %s", entryPath)
 
     def Unload(self):
-        logging.info("Cleaning up after removed directory '%s'", self.baseDirPath)
+        logging.debug("Cleaning up after removed directory '%s'", self.baseDirPath)
 
         for k, scriptFile in self.filesByPath.items():
             self.UnloadScript(scriptFile)
@@ -215,10 +215,10 @@ class ScriptDirectory(object):
     def DestroyNamespace(self, namespaceName):
         module = self.namespaces.get(namespaceName, None)
         if module.__file__:
-            logging.info("DestroyNamespace '%s' skipping, still used %s", namespaceName, module.__file__)
+            logging.debug("DestroyNamespace '%s' skipping, still used %s", namespaceName, module.__file__)
             return
 
-        logging.info("DestroyNamespace '%s'", namespaceName)
+        logging.debug("DestroyNamespace '%s'", namespaceName)
         del sys.modules[namespaceName]
         del self.namespaces[namespaceName]
 
@@ -249,7 +249,7 @@ class ScriptDirectory(object):
             return self.filesByPath[filePath]
 
     def LoadScript(self, filePath, namespacePath):
-        logging.info("LoadScript %s", filePath)
+        logging.debug("LoadScript %s", filePath)
 
         return self.scriptFileClass(filePath, namespacePath)
 
@@ -257,10 +257,10 @@ class ScriptDirectory(object):
         logging.info("RunScript %s", scriptFile.filePath)
 
         if not scriptFile.Run():
-            logging.info("RunScript:Failed to run '%s'", scriptFile.filePath)
+            logging.debug("RunScript:Failed to run '%s'", scriptFile.filePath)
             return False
 
-        logging.info("RunScript:Ran '%s'", scriptFile.filePath)
+        logging.debug("RunScript:Ran '%s'", scriptFile.filePath)
 
         namespace = self.CreateNamespace(scriptFile.namespacePath, scriptFile.filePath)
         self.SetModuleAttributes(scriptFile, namespace)
@@ -289,7 +289,7 @@ class ScriptDirectory(object):
                 logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
                 continue
 
-            logging.info("InsertModuleAttribute %s.%s", moduleName, k)
+            logging.debug("InsertModuleAttribute %s.%s", moduleName, k)
 
             if valueType in (types.ClassType, types.TypeType):
                 v.__module__ = moduleName
@@ -301,7 +301,7 @@ class ScriptDirectory(object):
         scriptFile.SetContributedAttributes(contributedAttributes)
 
     def RemoveModuleAttributes(self, scriptFile, namespace):
-        logging.info("RemoveModuleAttributes %s", scriptFile.filePath)
+        logging.debug("RemoveModuleAttributes %s", scriptFile.filePath)
 
         paths = namespace.__file__.split(";")
         if scriptFile.filePath not in paths:

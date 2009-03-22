@@ -69,7 +69,7 @@ class CodeReloader:
     # Script reloading support.
 
     def ReloadScript(self, oldScriptFile):
-        logging.info("ReloadScript")
+        logging.debug("ReloadScript")
         
         newScriptFile = self.CreateNewScript(oldScriptFile)
         if newScriptFile is None:
@@ -83,7 +83,7 @@ class CodeReloader:
         filePath = oldScriptFile.filePath
         namespacePath = oldScriptFile.namespacePath
 
-        logging.info("CreateNewScript namespace='%s', file='%s'", namespacePath, filePath)
+        logging.debug("CreateNewScript namespace='%s', file='%s'", namespacePath, filePath)
 
         # Read in and compile the modified script file.
         scriptDirectory = self.FindDirectory(filePath)
@@ -105,7 +105,7 @@ class CodeReloader:
         return None
 
     def UseNewScript(self, oldScriptFile, newScriptFile):
-        logging.info("UseNewScript")
+        logging.debug("UseNewScript")
 
         filePath = newScriptFile.filePath
         namespacePath = newScriptFile.namespacePath
@@ -254,7 +254,7 @@ class CodeReloader:
     # Attribute compatibility support
 
     def ScriptCompatibilityCheck(self, oldScriptFile, newScriptFile):
-        logging.info("ScriptCompatibilityCheck '%s'", oldScriptFile.filePath)
+        logging.debug("ScriptCompatibilityCheck '%s'", oldScriptFile.filePath)
 
         # Do not allow replacement of old contributions, whether from the old
         # script file given, or contributions it has inherited itself, if the
