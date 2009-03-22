@@ -145,7 +145,9 @@ class CodeReloader:
         attributeChanges = {}
 
         # Collect existing values for entries.
-        for k, v, valueType in scriptFile.GetExportableAttributes():
+        for k in scriptFile.contributedAttributes:
+            v = getattr(namespace, k)
+            valueType = type(v)
             attributeChanges[k] = [ (v, valueType), (None, None) ]
 
         # Collect entries for the attributes contributed by the new script file.
@@ -188,17 +190,24 @@ class CodeReloader:
         if value is None:
             value = newValue
 
-        logging.debug("Updating class %s", value.__name__)
+        logging.debug("Updating class %s, %s", value, id(value))
 
         for attrName, attrValue in newValue.__dict__.iteritems():
             if isinstance(attrValue, types.FunctionType):
                 newAttrValue = RebindFunction(attrValue, globals_)
             elif isinstance(attrValue, types.UnboundMethodType) or isinstance(attrValue, types.MethodType):
                 newAttrValue = RebindFunction(attrValue.im_func, globals_)
-            elif value is not newValue:
-                newAttrValue = attrValue
             else:
-                continue
+                # __doc__: On new-style classes, this cannot be overwritten.
+                # __dict__: This makes no sense to overwrite.
+                # __module__: Don't clobber the proper module name with '__builtin__'.
+                if attrName in ("__doc__", "__dict__", "__module__"):
+                    continue
+
+                if value is not newValue:
+                    newAttrValue = attrValue
+                else:
+                    continue
 
             logging.debug("setting %s %s", attrName, attrValue)
             setattr(value, attrName, attrValue)

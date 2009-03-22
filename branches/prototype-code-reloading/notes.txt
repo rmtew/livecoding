@@ -4,7 +4,29 @@ A moderately thorough exploration of code reloading within the Python runtime
 = WORKING NOTES: 20.03.2009
 
 TODO LIST
+- File change events.
+  - Hook up the library from the old library.
+- Unit tests to demonstrate the scope of the reload builtin.
+- Debug and complete the update approach, done.
+  - Notes
+    - A class in the namespace is not replaced, correct.
+    - A function in the class is not replaced, incorrect.
+  - Results
+    - Was iterating over the exportable attributes in the old script file,
+      should have been iterating over what it contributed, and getting those
+      from the namespace.
+
+NOTES ON THE UPDATE IN PLACE APPOACH
+- Need a custom unit test to verify function arguments are updated.
+- Need a custom unit test to verify that the linecache is not an issue.
+
+==============================================================================
+= WORKING NOTES: 20.03.2009
+
+TODO LIST
 - Implement the update approach.
+  - Needs namespace exporting support.
+  - Has script updating support.
 - File change events.
   - Hook up the library from the old library.
 - Unit tests to demonstrate the scope of the reload builtin.

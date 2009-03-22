@@ -18,7 +18,7 @@ class TestCase(unittest.TestCase):
         super(TestCase, self).run(*args, **kwargs)
 
 
-logging.basicConfig(level=logging.WARN)
+logging.basicConfig(level=logging.DEBUG)
 
 import namespace
 import reloader
@@ -385,24 +385,20 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         newStyleClassInstance.Func()
         newStyleClassInstance.FuncSuper()
 
-    def xtestUpdateSameFileClassReload(self):
+    def testUpdateSameFileClassReload_FunctionUpdate(self):
         """
         Reloading approach: Update old objects on reload.
         Reloading scope: Same file.
         
         1. Get references to the exported classes.
-        2. Instantiate an instance from each class.
-        3. Call the functions exposed by each instance.
+        2. Get references to functions on those classes.
 
-        4. Reload the script the classes were exported from.
+        3. Reload the script the classes were exported from.
 
-        5. Verify that the old classes were replaced with new ones.
-        6. Call the functions exposed by each old class instance.
-        7. Instantiate an instance of each new class.
-        8. Call the functions exposed by each new class instance.
+        4. Verify the old classes have not been replaced.
+        5. Verify the functions on the classes have been replaced.
 
-        This verifies that instances linked to old superceded
-        versions of a class, still work.
+        This verifies the existing classes are updated in place.
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
@@ -412,32 +408,89 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
 
         # Obtain references and instances for the classes defined in the script.
         oldStyleBaseClass = game.OldStyleBase
-        oldStyleBaseClassInstance = oldStyleBaseClass()
         oldStyleClass = game.OldStyle
-        oldStyleClassInstance = oldStyleClass()
-
         newStyleBaseClass = game.NewStyleBase
-        newStyleBaseClassInstance = newStyleBaseClass()
         newStyleClass = game.NewStyle
-        newStyleClassInstance = newStyleClass()
 
         # Verify that the exposed method can be called on each.
-        oldStyleBaseClassInstance.Func()
-        oldStyleClassInstance.Func()
-        newStyleBaseClassInstance.Func()
-        newStyleClassInstance.Func()
-        newStyleClassInstance.FuncSuper()
+        oldStyleBaseClassFunc = oldStyleBaseClass.Func
+        oldStyleClassFunc = oldStyleClass.Func
+        newStyleBaseClassFunc = newStyleBaseClass.Func
+        newStyleClassFunc = newStyleClass.Func
+        newStyleClassFuncSuper = newStyleClass.FuncSuper
 
-        cb = MakeMangleFilenameCallback("inheritanceSuperclasses.py")
-        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
+        # cb = MakeMangleFilenameCallback("inheritanceSuperclasses.py")
+        # mangleCallback=cb
+        self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py")
 
-        # Verify that the original classes were replaced with new versions.
+        ## Verify that the original classes were not replaced.
+        # This is of course because their contents are updated.
         self.failUnless(oldStyleBaseClass is game.OldStyleBase, "Failed to keep the original 'game.OldStyleBase' class")
         self.failUnless(oldStyleClass is game.OldStyle, "Failed to keep the original 'game.OldStyle' class")
         self.failUnless(newStyleBaseClass is game.NewStyleBase, "Failed to keep the original 'game.NewStyleBase' class")
         self.failUnless(newStyleClass is game.NewStyle, "Failed to keep the original 'game.NewStyle' class")
 
-        # ...
+        ## Verify that the functions on the classes have been updated in place.
+        # All classes should have had their functions replaced.
+        self.failUnless(oldStyleBaseClassFunc.im_func is not oldStyleBaseClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(oldStyleClassFunc.im_func is not oldStyleClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(newStyleBaseClassFunc.im_func is not newStyleBaseClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(newStyleClassFunc.im_func is not newStyleClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(newStyleClassFuncSuper.im_func is not newStyleClass.FuncSuper.im_func, "Class function not updated in place")
+
+    def testUpdateSameFileClassReload_ClassRemoval(self):
+        """
+        Reloading approach: Update old objects on reload.
+        Reloading scope: Same file.
+        
+        1. Get references to the exported classes.
+        2. Get references to functions on those classes.
+
+        3. Reload the script the classes were exported from.
+
+        4. Verify the old classes have not been replaced.
+        5. Verify the functions on the classes have been replaced.
+
+        This verifies the existing classes are updated in place.
+        """
+        scriptDirPath = GetScriptDirectory()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        
+        import game
+
+        # Obtain references and instances for the classes defined in the script.
+        oldStyleBaseClass = game.OldStyleBase
+        oldStyleClass = game.OldStyle
+        newStyleBaseClass = game.NewStyleBase
+        newStyleClass = game.NewStyle
+
+        # Verify that the exposed method can be called on each.
+        oldStyleBaseClassFunc = oldStyleBaseClass.Func
+        oldStyleClassFunc = oldStyleClass.Func
+        newStyleBaseClassFunc = newStyleBaseClass.Func
+        newStyleClassFunc = newStyleClass.Func
+        newStyleClassFuncSuper = newStyleClass.FuncSuper
+
+        cb = MakeMangleFilenameCallback("inheritanceSuperclasses_ClassRemoval.py")
+        newScriptFile = self.ReloadScriptFile(scriptDirectory, scriptDirPath, "inheritanceSuperclasses.py", mangleCallback=cb)
+
+        ## Verify that the original classes were not replaced.
+        # This is of course because their contents are updated.
+        self.failUnless(oldStyleBaseClass is game.OldStyleBase, "Failed to keep the original 'game.OldStyleBase' class")
+        self.failUnless(oldStyleClass is game.OldStyle, "Failed to keep the original 'game.OldStyle' class")
+        self.failUnless(newStyleBaseClass is game.NewStyleBase, "Failed to keep the original 'game.NewStyleBase' class")
+        self.failUnless(newStyleClass is game.NewStyle, "Failed to keep the original 'game.NewStyle' class")
+
+        ## Verify that the functions on the classes have been updated in place.
+        # All classes which still exist in the updated script should have had their functions replaced.
+        self.failUnless(oldStyleBaseClassFunc.im_func is not oldStyleBaseClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(newStyleBaseClassFunc.im_func is not newStyleBaseClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(newStyleClassFunc.im_func is not newStyleClass.Func.im_func, "Class function not updated in place")
+        self.failUnless(newStyleClassFuncSuper.im_func is not newStyleClass.FuncSuper.im_func, "Class function not updated in place")
+
+        # All classes which have been leaked should remain unchanged.
+        self.failUnless(oldStyleClassFunc.im_func is oldStyleClass.Func.im_func, "Class function not updated in place")
 
 
 class CodeReloaderSupportTests(CodeReloadingTestCase):
