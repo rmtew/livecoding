@@ -164,7 +164,8 @@ class ScriptDirectory(object):
                 logging.error("Unrecognised type of directory entry %s", entryPath)
 
     def Unload(self):
-        logging.debug("Cleaning up after removed directory '%s'", self.baseDirPath)
+        if len(self.filesByPath) or len(self.namespaces):
+            logging.debug("Cleaning up after removed directory '%s'", self.baseDirPath)
 
         for k, scriptFile in self.filesByPath.items():
             self.UnloadScript(scriptFile)
