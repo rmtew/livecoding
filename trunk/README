@@ -1,7 +1,11 @@
 
 = livecoding =
 
-This library is licensed under the BSD license, which is distributed with it and can be found in the same directory as the file 'LICENSE'.
+== Licensing and copyright ==
+
+Files declaring other licenses and authors are derivative, and remain under the specified licenses and copyright by the original authors.
+
+All other files are licensed under the BSD license, which is included as the file 'LICENSE'.
 
 == Authors ==
 
