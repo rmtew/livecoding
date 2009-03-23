@@ -20,6 +20,13 @@ class ClassA(type):
         return "a1"
 """
 
+aContentsBaseObject = """
+class ClassA(object):
+    var = 1
+    def FunctionA(self):
+        return "a1"
+"""
+
 aContentsBaseTypeClassVariableRemoval = """
 class ClassA(type):
     def FunctionA(self):
@@ -154,6 +161,27 @@ class UpdateTestCase(unittest.TestCase):
             from base.C import ClassB
             b = ClassB()
             self.failUnlessEqual(b.FunctionA(), "a2")
+
+    def test_file_update_inheritance_change(self):
+        with support.MonkeyPatcher() as mp:
+            mp.SetDirectoryStructure(GetDirectoryStructure())
+            # 'ClassA' starts inherited from 'object' 
+            mp.SetFileContents(aFileName, aContentsBaseObject)
+
+            cm = livecoding.CodeManager()
+            cm.AddDirectory("A", "base")
+            cm.AddDirectory("B", "base")
+
+            # 'ClassA' has changed to no longer be inherited from 'object'.
+            mp.SetFileContents(aFileName, aContentsBase)
+
+            cm.ProcessChangedFile(aFileName, changed=True)
+
+            from base.C import ClassB
+            b = ClassB()
+            import sys
+            sys.stderr.write(str(ClassB) +" "+ str(hasattr(ClassB, "__class__")))
+            # self.failUnlessEqual(b.FunctionA(), "a2")
 
     def test_file_update_class_variable_removal(self):
         with support.MonkeyPatcher() as mp:
