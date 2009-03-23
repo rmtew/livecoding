@@ -112,6 +112,13 @@ class ScriptDirectory(object):
     def SetBaseNamespaceName(self, baseNamespaceName):
         self.baseNamespaceName = baseNamespaceName
 
+    def GetNamespacePath(self, dirPath):
+        namespace = self.baseNamespaceName
+        relativeDirPath = os.path.relpath(dirPath, self.baseDirPath)
+        if relativeDirPath != ".":
+            namespace += "."+ relativeDirPath.replace(os.path.sep, ".")
+        return namespace
+
     def Load(self):
         ## Pass 1: Load all the valid scripts under the given directory.
         self.LoadDirectory(self.baseDirPath)
@@ -142,12 +149,9 @@ class ScriptDirectory(object):
         return True
 
     def LoadDirectory(self, dirPath):
-        logging.info("LoadDirectory %s", dirPath)
+        logging.debug("LoadDirectory %s", dirPath)
 
-        namespace = self.baseNamespaceName
-        relativeDirPath = os.path.relpath(dirPath, self.baseDirPath)
-        if relativeDirPath != ".":
-            namespace += "."+ relativeDirPath.replace(os.path.sep, ".")
+        namespace = self.GetNamespacePath(dirPath)
 
         for entryName in os.listdir(dirPath):
             if entryName == ".svn":
@@ -164,8 +168,10 @@ class ScriptDirectory(object):
                 logging.error("Unrecognised type of directory entry %s", entryPath)
 
     def Unload(self):
-        if len(self.filesByPath) or len(self.namespaces):
-            logging.debug("Cleaning up after removed directory '%s'", self.baseDirPath)
+        if not len(self.filesByPath) and not len(self.namespaces):
+            return
+
+        logging.debug("Cleaning up after removed directory '%s'", self.baseDirPath)
 
         for k, scriptFile in self.filesByPath.items():
             self.UnloadScript(scriptFile)
@@ -255,7 +261,7 @@ class ScriptDirectory(object):
         return self.scriptFileClass(filePath, namespacePath)
 
     def RunScript(self, scriptFile):
-        logging.info("RunScript %s", scriptFile.filePath)
+        logging.debug("RunScript %s", scriptFile.filePath)
 
         if not scriptFile.Run():
             logging.debug("RunScript:Failed to run '%s'", scriptFile.filePath)

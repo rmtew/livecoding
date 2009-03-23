@@ -1,7 +1,7 @@
 """
 The original version of this script is publically available from the web page
 given below.  It has been modified to suit the needs of the livecoding
-library.
+library.  The license of this script is that of the original version.
 
 Author: A.M. Kuchling
 Source: http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/215418

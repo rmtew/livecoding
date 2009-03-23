@@ -1,8 +1,6 @@
 import unittest
-import os
-import sys
-import logging
-import inspect
+import os, sys, time, logging
+import inspect, copy
 
 # Temporary hack to bring in the namespace prototype.
 if __name__ == "__main__":
@@ -19,7 +17,7 @@ class TestCase(unittest.TestCase):
         super(TestCase, self).run(*args, **kwargs)
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.WARNING)
 
 import namespace
 import reloader
@@ -28,6 +26,12 @@ import reloader
 class CodeReloadingTestCase(TestCase):
     def setUp(self):
         self.codeReloader = None
+        
+        scriptDirPath = GetScriptDirectory()
+        scriptFilePath = os.path.join(scriptDirPath, "fileChange.py")
+
+        if os.path.exists(scriptFilePath):
+            os.remove(scriptFilePath)
 
     def tearDown(self):
         if self.codeReloader is not None:
@@ -713,6 +717,53 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
 
         # Conclusion: Attribute leaking happens and is rectified.
 
+    def testFileChangeDetection(self):
+        scriptDirPath = GetScriptDirectory()
+        scriptFilePath = os.path.join(scriptDirPath, "fileChange.py")
+        script2DirPath = scriptDirPath +"2"
+
+        # Start up the code reloader.
+        # Lower the file change check frequency, to prevent unnecessary unit test stalling.
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE, monitorFileChanges=True, fileChangeCheckDelay=0.05)
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+
+        # Identify the initial script to be loaded.
+        sourceScriptFilePath = os.path.join(script2DirPath, "fileChange_Before.py")
+        self.failUnless(os.path.exists(sourceScriptFilePath), "Failed to locate '%s' script" % sourceScriptFilePath)
+
+        # Wait for the monitoring to kick in.
+        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
+        self.failUnless(ret is not None, "File monitoring not detected in a timely fashion")
+
+        open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
+        self.failUnless(os.path.exists(scriptFilePath), "Failed to create the scratch file")
+
+        # Wait for the file creation to be detected.
+        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
+        self.failUnless(ret is not None, "File change not detected in a timely fashion")
+
+        import game
+        self.failUnless(game.FileChangeFunction.__doc__ == " old version ", "Expected function doc string value not present")
+
+        # Replace the initially loaded script contents via file operations.
+        sourceScriptFilePath = os.path.join(script2DirPath, "fileChange_After.py")
+        self.failUnless(os.path.exists(sourceScriptFilePath), "Failed to locate '%s' script" % sourceScriptFilePath)
+
+        # Wait for the monitoring to kick in.
+        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
+        self.failUnless(ret is not None, "File change not detected in a timely fashion")
+
+        lastWatchState = copy.deepcopy(cr.internalFileMonitor.watchState)
+
+        # Change the monitored script.
+        open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
+        
+        # Wait for the next file change to be detected.
+        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
+        self.failUnless(ret is not None, "File change not detected in a timely fashion")
+
+        self.failUnless(game.FileChangeFunction.__doc__ == " new version ", "Updated function doc string value still the original one")
+
 
 class CodeReloadingLimitationTests(TestCase):
     """
@@ -803,6 +854,7 @@ class DummyClass:
         instance.attrName = attrName
         instance.defaultValue = defaultValue
         return instance
+
 
 def MakeMangleFilenameCallback(newFileName):
     """

@@ -13,9 +13,9 @@ import threading, Queue
 
 
 class ChangeHandler:
-    def __init__(self, callback, delay=1.0, useThread=True):
+    def __init__(self, callback, delay=None, useThread=True):
         self.callback = callback
-        self.delay = delay
+        self.delay = delay is None and 1.0 or delay
 
         self.directories = []
         self.watchState = None
@@ -29,7 +29,7 @@ class ChangeHandler:
         self.module = None
 
         if useThread:
-            self.thread = ChangeThread(weakref.proxy(self), self.delay)
+            self.thread = ChangeThread(weakref.proxy(self))
         else:
             self.module = GetFileChangeModule()
             self.module.Prepare(self)
@@ -71,6 +71,23 @@ class ChangeHandler:
     def ProcessFileEvents(self):
         self.module.Check(self)
 
+    def WaitForNextMonitoringCheck(self, maxDelay=10.0, checkDelay=0.05):
+        lastCheckTimestamp = self.thread.lastCheckTimestamp
+        initialMaxDelay = maxDelay
+        while maxDelay > 0:
+            self.thread.lock.acquire()
+            try:
+                if lastCheckTimestamp != self.thread.lastCheckTimestamp:
+                    return initialMaxDelay - maxDelay
+            finally:
+                self.thread.lock.release()
+
+            time.sleep(checkDelay)
+            maxDelay -= checkDelay
+
+        return None
+
+
 def GetFileChangeModule():
     module = None
     # Not ready for use.  If it is going to handle multiple directories,
@@ -85,20 +102,20 @@ def GetFileChangeModule():
     return module
 
 class ChangeThread(threading.Thread):
-    def __init__(self, handler, delay, **kwargs):
+    def __init__(self, handler, **kwargs):
         threading.Thread.__init__ (self, **kwargs)
         self.setDaemon(1)
 
         self.handler = handler
-        self.delay = delay
         self.resetEvent = threading.Event()
         self.lock = threading.Lock()
+        self.lastCheckTimestamp = None
         self.start()
 
     def run(self):
         module = GetFileChangeModule()
         module.Prepare(self.handler)
-        time.sleep(self.delay)
+        time.sleep(self.handler.delay)
 
         try:
             while True:
@@ -108,9 +125,10 @@ class ChangeThread(threading.Thread):
                     module.Prepare(self.handler)
                 else:
                     module.Check(self.handler)
+                self.lastCheckTimestamp = time.time()
                 self.lock.release()
 
-                time.sleep(self.delay)
+                time.sleep(self.handler.delay)
         except ReferenceError:
             pass
 

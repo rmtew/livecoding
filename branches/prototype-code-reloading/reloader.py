@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 import types
+import weakref
+import time
 
 # Temporary hack to bring in the namespace prototype.
 if __name__ == "__main__":
@@ -21,11 +23,25 @@ MODE_UPDATE = 2
 class NonExistentValue: pass
 
 class CodeReloader:
-    def __init__(self, mode=MODE_OVERWRITE):
-        self.mode = mode
-        self.directoriesByPath = {}
+    internalFileMonitor = None
 
+    def __init__(self, mode=MODE_OVERWRITE, monitorFileChanges=False, fileChangeCheckDelay=None):
+        self.mode = mode
+        self.monitorFileChanges = monitorFileChanges
+
+        self.directoriesByPath = {}
         self.leakedAttributes = {}
+
+        if monitorFileChanges:
+            # Grabbing a weakref to a method of this instance requires me to
+            # hold onto the method as well.
+            pr = weakref.proxy(self)
+            cb = lambda *args, **kwargs: pr.ProcessChangedFile(*args, **kwargs)
+            self.internalFileMonitor = self.GetChangeHandler(cb, delay=fileChangeCheckDelay)
+
+    def GetChangeHandler(self, cb, *args, **kwargs):
+        import filechanges
+        return filechanges.ChangeHandler(cb, *args, **kwargs)
 
     # ------------------------------------------------------------------------
     # Directory registration support.
@@ -33,11 +49,20 @@ class CodeReloader:
     def AddDirectory(self, baseNamespace, baseDirPath):
         handler = self.directoriesByPath[baseDirPath] = ReloadableScriptDirectory(baseDirPath, baseNamespace)
         handler.Load()
+
+        if self.monitorFileChanges:
+            self.internalFileMonitor.AddDirectory(baseDirPath)
+
         return handler
 
     def RemoveDirectory(self, baseDirPath):
+        if self.monitorFileChanges:
+            self.internalFileMonitor.RemoveDirectory(baseDirPath)
+
         handler = self.directoriesByPath[baseDirPath]
         handler.Unload()
+
+        del self.directoriesByPath[baseDirPath]
 
     def FindDirectory(self, filePath):
         filePathLower = filePath.lower()
@@ -49,6 +74,8 @@ class CodeReloader:
     # External events.
 
     def ProcessChangedFile(self, filePath, added=False, changed=False, deleted=False):
+        logging.debug("File change '%s' added=%s changed=%s deleted=%s", filePath, added, changed, deleted)
+
         scriptDirectory = self.FindDirectory(filePath)
         if scriptDirectory is None:
             logging.error("File change event for invalid path '%s'", filePath)
@@ -58,15 +85,36 @@ class CodeReloader:
         if oldScriptFile:
             # Modified or deleted.
             if changed:
+                logging.info("Script reloaded '%s'", filePath)
                 self.ReloadScript(oldScriptFile)
             elif deleted:
-                pass
+                logging.info("Script removed '%s'", filePath)
+                logging.warn("Deleted script leaking its namespace contributions")
         else:
-            # Added.
-            pass
+            if added:
+                logging.info("Script loaded '%s'", filePath)
+                self.LoadScript(filePath)
+            elif changed:
+                logging.error("Modified script not already loaded '%s'", filePath)
+            elif deleted:
+                logging.error("Deleted script not already loaded '%s'", filePath)
 
     # ------------------------------------------------------------------------
     # Script reloading support.
+
+    def LoadScript(self, scriptFilePath):
+        logging.debug("LoadScript")
+
+        dirPath = os.path.dirname(scriptFilePath)
+        scriptDirectory = self.FindDirectory(scriptFilePath)    
+        namespace = scriptDirectory.GetNamespacePath(dirPath)
+        scriptFile = scriptDirectory.LoadScript(scriptFilePath, namespace)
+        ret = scriptDirectory.RunScript(scriptFile)
+        if ret:
+            scriptDirectory.RegisterScript(scriptFile)
+        else:
+            scriptFile.LogLastError()
+        return ret            
 
     def ReloadScript(self, oldScriptFile):
         logging.debug("ReloadScript")
