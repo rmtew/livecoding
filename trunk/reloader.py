@@ -5,15 +5,6 @@ import types
 import weakref
 import time
 
-# Temporary hack to bring in the namespace prototype.
-if __name__ == "__main__":
-    currentPath = sys.path[0]
-    parentPath = os.path.dirname(currentPath)
-    namespacePath = os.path.join(parentPath, "prototype-namespacing")
-    if namespacePath not in sys.path:
-        sys.path.append(namespacePath)
-
-# ----------------------------------------------------------------------------
 
 import namespace
 
@@ -319,9 +310,6 @@ class CodeReloader:
 
 class ReloadableScriptFile(namespace.ScriptFile):
     version = 1
-
-    def XXX(self, attributes):
-        pass
 
 
 class ReloadableScriptDirectory(namespace.ScriptDirectory):
