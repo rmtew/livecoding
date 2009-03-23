@@ -1,11 +1,10 @@
 
-= livecoding.py =
+= livecoding =
 
 This library is licensed under the BSD license, which is distributed with it and can be found in the same directory as the file 'LICENSE'.
 
 == Authors ==
 
- * Michael Brannan
  * Richard Tew <richard.m.tew@gmail.com>
 
 == Overview ==

@@ -2,13 +2,11 @@ import unittest
 import os, sys, time, logging
 import inspect, copy
 
-# Temporary hack to bring in the namespace prototype.
 if __name__ == "__main__":
     currentPath = sys.path[0]
     parentPath = os.path.dirname(currentPath)
-    namespacePath = os.path.join(parentPath, "prototype-namespacing")
-    if namespacePath not in sys.path:
-        sys.path.append(namespacePath)
+    if parentPath not in sys.path:
+        sys.path.append(parentPath)
 
 # Add test information to the logging output.    
 class TestCase(unittest.TestCase):
@@ -17,7 +15,7 @@ class TestCase(unittest.TestCase):
         super(TestCase, self).run(*args, **kwargs)
 
 
-logging.basicConfig(level=logging.WARNING)
+# logging.basicConfig(level=logging.WARNING)
 
 import namespace
 import reloader
@@ -873,8 +871,8 @@ def GetCurrentDirectory():
     return dirPath
 
 def GetScriptDirectory():
-    currentDirPath = GetCurrentDirectory()
-    return os.path.join(currentDirPath, "scripts")
+    parentDirPath = GetCurrentDirectory()
+    return os.path.join(os.path.dirname(parentDirPath), "scripts")
 
 if __name__ == "__main__":
     # If this is being run on earlier versions of Python than 2.6, monkeypatch 
