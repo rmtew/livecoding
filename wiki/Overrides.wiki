@@ -1,4 +1,4 @@
-#labels Featured
+#labels Deprecated
 Overrides are just a way to dynamically intercept when a function in
 any instance of a given class is called, and to be able to incorporate
 some other arbitary code to be either executed in place of the original
