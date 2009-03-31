@@ -29,9 +29,9 @@ You might register the contents of the 'stuff' directory under the base
 namespace 'server' in this manner:
 
 {{{
-  import livecoding
-  cm = livecoding.CodeManager()
-  cm.AddDirectory("stuff", "server")
+  import reloader
+  cr = reloader.CodeReloader()
+  cr.AddDirectory("server", "stuff")
 }}}
   
 Now this will result in a 'services' submodule for 'server' and the contents
@@ -105,10 +105,10 @@ These files provide the same classes as in the previous example.  Next both
 'stuff1' and 'stuff2' are registered under the same base namespace:
 
 {{{
-  import livecoding
-  cm = livecoding.CodeManager()
-  cm.AddDirectory("stuff1", "server")
-  cm.AddDirectory("stuff2", "server")
+  import reloader
+  cr = reloader.CodeReloader()
+  cr.AddDirectory("server", "stuff1")
+  cr.AddDirectory("server", "stuff2")
 }}}
 
 And it is still possible to do the following:
