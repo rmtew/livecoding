@@ -320,19 +320,3 @@ class ScriptDirectory(object):
             delattr(namespace, k)
 
         return True
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-
-    path = sys.path[0]
-    dirPath = os.path.join(path, "script-hierarchy")
-    gameScripts = ScriptDirectory(dirPath, "game")
-    if not gameScripts.Load():
-        sys.exit(0)
-    
-    import game
-    game.Alpha
-    import game.beta
-    game.beta.Beta
-    
