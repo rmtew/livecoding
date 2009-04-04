@@ -13,8 +13,17 @@ MODE_UPDATE = 2
 
 class NonExistentValue: pass
 
+class ReloadableScriptFile(namespace.ScriptFile):
+    version = 1
+
+class ReloadableScriptDirectory(namespace.ScriptDirectory):
+    scriptFileClass = ReloadableScriptFile
+    unitTest = True
+
+
 class CodeReloader:
     internalFileMonitor = None
+    scriptDirectoryClass = ReloadableScriptDirectory
 
     def __init__(self, mode=MODE_OVERWRITE, monitorFileChanges=False, fileChangeCheckDelay=None):
         self.mode = mode
@@ -38,13 +47,17 @@ class CodeReloader:
     # Directory registration support.
 
     def AddDirectory(self, baseNamespace, baseDirPath):
-        handler = self.directoriesByPath[baseDirPath] = ReloadableScriptDirectory(baseDirPath, baseNamespace)
-        handler.Load()
+        handler = self.scriptDirectoryClass(baseDirPath, baseNamespace)
+        if handler.Load():
+            self.directoriesByPath[baseDirPath] = handler
 
-        if self.monitorFileChanges:
-            self.internalFileMonitor.AddDirectory(baseDirPath)
+            if self.monitorFileChanges:
+                self.internalFileMonitor.AddDirectory(baseDirPath)
 
-        return handler
+            return handler
+
+        # Remove the namespace contributions which came from this failed process.
+        handler.Unload()
 
     def RemoveDirectory(self, baseDirPath):
         if self.monitorFileChanges:
@@ -304,16 +317,6 @@ class CodeReloader:
         # Update:
         # - Change from old style class to new style class.
         return True
-
-
-# TODO: Determine if these are really necessary any more?
-
-class ReloadableScriptFile(namespace.ScriptFile):
-    version = 1
-
-
-class ReloadableScriptDirectory(namespace.ScriptDirectory):
-    scriptFileClass = ReloadableScriptFile
 
 
 def RebindFunction(function, globals_):

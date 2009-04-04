@@ -15,11 +15,11 @@ class TestCase(unittest.TestCase):
         super(TestCase, self).run(*args, **kwargs)
 
 
-# logging.basicConfig(level=logging.WARNING)
-
 import namespace
 import reloader
 
+class ReloadableScriptDirectoryNoUnitTesting(reloader.ReloadableScriptDirectory):
+    unitTest = False
 
 class CodeReloadingTestCase(TestCase):
     def setUp(self):
@@ -150,8 +150,11 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
 
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE)
+        cr = self.codeReloader = reloader.CodeReloader()
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
+
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
 
         import game
 
@@ -324,8 +327,10 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         versions of a class, still work.
         """
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE)
+        cr = self.codeReloader = reloader.CodeReloader()
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
         
         import game
 
@@ -405,7 +410,9 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
         
         import game
 
@@ -464,7 +471,9 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
         
         import game
 
@@ -527,7 +536,9 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         """
         scriptDirPath = GetScriptDirectory()
         cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
         
         import game
 
@@ -568,7 +579,7 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
     mockedNamespaces = None
 
     def tearDown(self):
-        super(CodeReloaderSupportTests, self).tearDown()
+        super(self.__class__, self).tearDown()
 
         # Restore all the mocked namespace entries.
         if self.mockedNamespaces is not None:
@@ -595,8 +606,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         Verify that this function returns a registered handler for a parent
         directory, if there are any above the given file path.
         """
-        self.InsertMockNamespaceEntry("reloader.ReloadableScriptDirectory", DummyClass)
-        self.failUnless(reloader.ReloadableScriptDirectory is DummyClass, "Failed to mock the script directory class")
+        #self.InsertMockNamespaceEntry("reloader.ReloadableScriptDirectory", DummyClass)
+        #self.failUnless(reloader.ReloadableScriptDirectory is DummyClass, "Failed to mock the script directory class")
 
         currentDirPath = GetCurrentDirectory()
         # Add several directories to ensure correct results are returned.
@@ -607,14 +618,24 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         handlersByPath = {}
 
         baseNamespaceName = "testns"
+
+        class DummySubClass(DummyClass):
+            def Load(self):
+                return True
+
+        dummySubClassInstance = DummySubClass()
+        self.failUnless(dummySubClassInstance.Load() is True, "DummySubClass insufficient to fake directory loading")
         
         cr = reloader.CodeReloader()        
+        cr.scriptDirectoryClass = DummySubClass
 
         # Test that a bad path will not find a handler when there are no handlers.
         self.failUnless(cr.FindDirectory("unregistered path") is None, "Got a script directory handler for an unregistered path")
 
         for scriptDirPath in scriptDirPaths:
-            handlersByPath[scriptDirPath] = cr.AddDirectory(baseNamespaceName, scriptDirPath)
+            handler = cr.AddDirectory(baseNamespaceName, scriptDirPath)
+            self.failUnless(handler is not None, "Script loading failure")
+            handlersByPath[scriptDirPath] = handler
         
         # Test that a given valid registered script path gives the known handler for that path.
         while len(scriptDirPaths):
@@ -632,8 +653,10 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         leakName = "NewStyleSubclassViaClassReference"
     
         scriptDirPath = GetScriptDirectory()
-        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE)
+        cr = self.codeReloader = reloader.CodeReloader()
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
 
         # Locate the script file object for the 'inheritanceSubclasses.py' file.
         scriptPath = os.path.join(scriptDirPath, "inheritanceSubclasses.py")
@@ -722,8 +745,10 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
 
         # Start up the code reloader.
         # Lower the file change check frequency, to prevent unnecessary unit test stalling.
-        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_OVERWRITE, monitorFileChanges=True, fileChangeCheckDelay=0.05)
+        cr = self.codeReloader = reloader.CodeReloader(monitorFileChanges=True, fileChangeCheckDelay=0.05)
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
         scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
 
         # Identify the initial script to be loaded.
         sourceScriptFilePath = os.path.join(script2DirPath, "fileChange_Before.py")
@@ -761,6 +786,73 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         self.failUnless(ret is not None, "File change not detected in a timely fashion")
 
         self.failUnless(game.FileChangeFunction.__doc__ == " new version ", "Updated function doc string value still the original one")
+
+    def testScriptUnitTesting(self):
+        scriptDirPath = GetScriptDirectory()
+        self.codeReloader = reloader.CodeReloader()
+
+        # We do not want to log the unit test failure we are causing.
+        class NamespaceUnitTestFilter(logging.Filter):
+            def __init__(self, *args, **kwargs):
+                logging.Filter.__init__(self, *args, **kwargs)
+                
+                # These are the starting words of the lines we want to suppress.
+                self.lineStartsWiths = [
+                    "ScriptDirectory.Load",
+                    "Error",
+                    "Failure",
+                    "Traceback",
+                ]
+                # How many lines we expect to have suppressed, for verification purposes.
+                self.lineCount = len(self.lineStartsWiths)
+                # Keep the suppressed lines around in case the filtering hits unexpected lines.
+                self.filteredLines = []
+
+            def filter(self, record):
+                self.lineCount -= 1
+
+                # If there are lines left to filter, check them.
+                if len(self.lineStartsWiths):
+                    txt = self.lineStartsWiths[0]
+                    if record.msg.startswith(txt):
+                        del self.lineStartsWiths[0]
+                        self.filteredLines.append((record.msg, record.args))
+                    else:
+                        # Give up on filtering on unexpected input.
+                        self.lineStartsWiths = []
+                    return 0
+
+                # Othewise, log away.
+                return 1
+
+        logger = logging.getLogger()
+        loggingFilter = NamespaceUnitTestFilter("testScriptUnitTesting - logging Filter")
+        # Make sure we remove this, otherwise the logging will leak..
+        logger.addFilter(loggingFilter)
+
+        __builtins__.unitTestFailure = True
+        try:
+            scriptDirectory = self.codeReloader.AddDirectory("game", scriptDirPath)
+        finally:
+            logger.removeFilter(loggingFilter)
+            del __builtins__.unitTestFailure
+
+        self.failUnless(scriptDirectory is None, "Unit tests unexpectedly passed")
+
+        # If something went wrong with the filtered logging, log out the suppressed lines.
+        if loggingFilter.lineCount != 0:
+            for msg, args in loggingFilter.filteredLines:
+                logging.error(msg, *args)
+        # Fail unless the filtered logging met expectations.
+        self.failUnless(loggingFilter.lineCount == 0, "Filtered too many lines to cover the unit test failure")
+
+        __builtins__.unitTestFailure = False
+        try:
+            scriptDirectory = self.codeReloader.AddDirectory("game", scriptDirPath)
+        finally:
+            del __builtins__.unitTestFailure
+
+        self.failUnless(scriptDirectory is not None, "Unit tests unexpectedly failed")
 
 
 class CodeReloadingLimitationTests(TestCase):
@@ -875,6 +967,8 @@ def GetScriptDirectory():
     return os.path.join(os.path.dirname(parentDirPath), "scripts")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING)
+
     # If this is being run on earlier versions of Python than 2.6, monkeypatch 
     # in something resembling missing standard library functionality.
     if sys.version_info[0] == 2 and sys.version_info[1] < 6:

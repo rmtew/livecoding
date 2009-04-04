@@ -12,19 +12,21 @@ import imp
 import traceback
 import types
 import logging
+import unittest
 
 
 class ScriptFile(object):
     lastError = None
     contributedAttributes = None
 
-    def __init__(self, filePath, namespacePath):
+    def __init__(self, filePath, namespacePath, implicitLoad=True):
         self.filePath = filePath
         self.namespacePath = namespacePath
 
         self.scriptGlobals = {}
 
-        self.Load(filePath)
+        if implicitLoad:
+            self.Load(filePath)
 
     def __repr__(self):
         return "<ScriptFile filePath='%s' namespacePath='%s'>" % (self.filePath, self.namespacePath)
@@ -46,6 +48,7 @@ class ScriptFile(object):
         
     def Run(self):
         self.scriptGlobals = {}
+
         try:
             eval(self.codeObject, self.scriptGlobals, self.scriptGlobals)
         except (ImportError, AttributeError):
@@ -57,6 +60,52 @@ class ScriptFile(object):
 
         return True
 
+    def UnitTest(self):
+        dirPath, scriptFileName = os.path.split(self.filePath)
+        testScriptPath = os.path.join(dirPath, scriptFileName[:-3] + "_unittest.py")
+        testFileExists = os.path.exists(testScriptPath)
+
+        # Create a throwaway script file object for the unit test script.
+        scriptFile = self.__class__(testScriptPath, None, implicitLoad=testFileExists)
+        if testFileExists:
+            scriptFile.Run()
+
+        # Inject the main script file contents underneath the test script contents.
+        scriptFile.scriptGlobals.update(self.scriptGlobals)
+
+        # Gather all the unit tests from any test suites.
+        testSuite = unittest.TestSuite()
+        for testCase in scriptFile.scriptGlobals.values():
+            if type(testCase) is types.TypeType or type(testCase) is types.ClassType:
+                if issubclass(testCase, unittest.TestCase):
+                    subSuite = unittest.defaultTestLoader.loadTestsFromTestCase(testCase)
+                    testSuite.addTests(subSuite)
+
+        testResult = unittest.TestResult()
+        testSuite.run(testResult)
+
+        if testResult.errors or testResult.failures:
+            self.lastError = []
+        
+            lastTestCase = None
+            for errorTestCase, tracebackText in testResult.errors:
+                if lastTestCase is not errorTestCase:
+                    self.lastError.append("Error in test case '%s'" % errorTestCase.__class__.__name__)
+                    lastTestCase = errorTestCase
+                self.lastError.append(tracebackText)
+
+            lastTestCase = None
+            for failureTestCase, tracebackText in testResult.failures:
+                if lastTestCase is not failureTestCase:
+                    self.lastError.append("Failure in test case '%s'" % failureTestCase.__class__.__name__)
+                    lastTestCase = failureTestCase
+                self.lastError.append(tracebackText)
+
+            return False
+
+        # No unit tests, or the unit tests did not error or fail.
+        return True
+
     def LogLastError(self, flush=True, context="Unknown logic"):
         if self.lastError is None:
             logging.error("Script file '%s' unexpectedly missing a last error", self.filePath)
@@ -64,7 +113,7 @@ class ScriptFile(object):
 
         logging.error("Error executing script file '%s'", self.filePath)
         for line in self.lastError:
-            logging.error("%s", line.rstrip("\r\n"))
+            logging.error(line.rstrip("\r\n"))
 
         if flush:
             self.lastError = None
@@ -90,6 +139,7 @@ class ScriptFile(object):
 class ScriptDirectory(object):
     scriptFileClass = ScriptFile
 
+    unitTest = True
     dependencyResolutionPasses = 10
 
     def __init__(self, baseDirPath=None, baseNamespace=None):
@@ -127,6 +177,8 @@ class ScriptDirectory(object):
         scriptFilesToLoad = set(self.filesByPath.itervalues())
         attemptsLeft = self.dependencyResolutionPasses
         while len(scriptFilesToLoad) and attemptsLeft > 0:
+            logging.info("ScriptDirectory.Load dependency resolution attempts left %d", attemptsLeft)
+
             scriptFilesLoaded = set()
             for scriptFile in scriptFilesToLoad:
                 if self.RunScript(scriptFile):
@@ -161,9 +213,11 @@ class ScriptDirectory(object):
             if os.path.isdir(entryPath):
                 self.LoadDirectory(entryPath)
             elif os.path.isfile(entryPath):
-                if entryName.endswith(".py"):
-                    scriptFile = self.LoadScript(entryPath, namespace)
-                    self.RegisterScript(scriptFile)
+                if not entryName.endswith(".py") or entryName.endswith("_unittest.py"):
+                    continue
+
+                scriptFile = self.LoadScript(entryPath, namespace)
+                self.RegisterScript(scriptFile)
             else:
                 logging.error("Unrecognised type of directory entry %s", entryPath)
 
@@ -264,10 +318,17 @@ class ScriptDirectory(object):
         logging.debug("RunScript %s", scriptFile.filePath)
 
         if not scriptFile.Run():
-            logging.debug("RunScript:Failed to run '%s'", scriptFile.filePath)
+            logging.debug("RunScript failed")
             return False
 
-        logging.debug("RunScript:Ran '%s'", scriptFile.filePath)
+        if self.unitTest:
+            logging.debug("RunScript unit testing")
+
+            if not scriptFile.UnitTest():
+                logging.debug("RunScript tests failed or errored")
+                return False
+
+        logging.debug("RunScript exporting")
 
         namespace = self.CreateNamespace(scriptFile.namespacePath, scriptFile.filePath)
         self.SetModuleAttributes(scriptFile, namespace)
@@ -309,6 +370,8 @@ class ScriptDirectory(object):
 
     def RemoveModuleAttributes(self, scriptFile, namespace):
         logging.debug("RemoveModuleAttributes %s", scriptFile.filePath)
+        if scriptFile.contributedAttributes is None:
+            return True
 
         paths = namespace.__file__.split(";")
         if scriptFile.filePath not in paths:
@@ -320,3 +383,4 @@ class ScriptDirectory(object):
             delattr(namespace, k)
 
         return True
+
