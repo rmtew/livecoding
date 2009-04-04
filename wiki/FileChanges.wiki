@@ -168,7 +168,7 @@ as a prewritten function in the alternative code manager class
 '!StacklessCodeManager' which can be scheduled in the following manner.
 
 {{{
-  def ManageFileChanges(self, cm):
+  def ManageFileChanges(self, cr):
       while True:
           cr.DispatchPendingFileChanges()
           stackless.sleep(1.0)
