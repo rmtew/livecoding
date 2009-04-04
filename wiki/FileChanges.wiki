@@ -55,7 +55,7 @@ event to the code manager.
 
 {{{
   # filePath is be an absolute path ending in ".../stuff/services/net.py"
-  cm.ProcessChangedFile(filePath, added=False, changed=True, deleted=False)
+  cr.ProcessChangedFile(filePath, added=False, changed=True, deleted=False)
 }}}
 
 Now when Test is called on the instance of '!NetService', it will return 2.
@@ -113,11 +113,11 @@ If you poll for file changes in a tasklet, then you can pass them
 directly onto the code manager in the same way shown above.
 
 {{{
-  def ManageFileChanges(self, cm):
+  def ManageFileChanges(self, cr):
       while True:
           # Pass the callback all the pending file changes should
           # be passes through.
-      	  DispatchFileChanges(cm.ProcessChangedFiles)
+      	  DispatchFileChanges(cr.ProcessChangedFiles)
       	  # Stall for second before checking again.
           stackless.sleep(1.0)
 }}}
@@ -129,27 +129,27 @@ thread from the one they are detected on, a queue can be used in the
 '!ManageFileChanges' tasklet to receive them from the other thread.
 
 {{{
-  def ManageFileChanges(self, cm, queue):
+  def ManageFileChanges(self, cr, queue):
       while True:
           # Pass the callback all the pending file changes should
           # be passes through.
 	  try:
               while True:
                   filePath, added, changed, deleted = queue.get_nowait()
-                  cm.ProcessChangedFiles(filePath, added, changed, deleted)
+                  cr.ProcessChangedFiles(filePath, added, changed, deleted)
           except Queue.Empty:
               pass
       	  # Stall for second before checking again.
           stackless.sleep(1.0)
 
-  import livecoding
-  cm = livecoding.CodeManager()
+  import reloader
+  cr = reloader.CodeReloader(monitorFileChanges=False)
   
   # queue is sourced from elsewhere and the thread managing the
   # file changes has a reference to it to send things through.
 
   import stackless
-  stackless.tasklet(ManageFileChanges)(cm, queue)
+  stackless.tasklet(ManageFileChanges)(cr, queue)
 }}}
 
 ==== Example: Using the provided file change detection ====
@@ -170,12 +170,12 @@ as a prewritten function in the alternative code manager class
 {{{
   def ManageFileChanges(self, cm):
       while True:
-          cm.DispatchPendingFileChanges()
+          cr.DispatchPendingFileChanges()
           stackless.sleep(1.0)
 
-  import livecoding
-  cm = livecoding.StacklessCodeManager(detectChanges=True)
+  import reloader
+  cr = reloader.StacklessCodeReloader(monitorFileChanges=False)
 
   import stackless
-  stackless.tasklet(ManageFileChanges)(cm)
+  stackless.tasklet(ManageFileChanges)(cr)
 }}}
