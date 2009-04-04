@@ -1,4 +1,6 @@
 #labels Featured
+INTRO HERE
+
 You can either provide your own file change notification events or you can
 opt to use the built-in file change detection.
 
@@ -30,9 +32,9 @@ You have registered the contents of the 'stuff' directory under the base
 namespace 'server' in this manner:
 
 {{{
-  import livecoding
-  cm = livecoding.CodeManager()
-  cm.AddDirectory("stuff", "server")
+  import reloader
+  cr = reloader.CodeReloader(monitorFileChanges=False)
+  cr.AddDirectory("server", "stuff")
 }}}
 
 At this point all your files for your application have their contents ready
@@ -72,11 +74,13 @@ them.  This is just a matter of telling the code manager when you
 instantiate it.
 
 The only difference from the first example is that when you instance the code
-manager, you tell it to do the file change detection internally.
+manager, you do not need to tell it to do the file change detection internally as this is the default behaviour.
 
 {{{
+  import reloader
+  cr = reloader.CodeReloader()
   import livecoding
-  cm = livecoding.CodeManager(detectChanges=True)
+  cm = livecoding.CodeManager()
 }}}
 
 *Warning:* As mentioned in the last example it is unsafe to put in place
@@ -177,4 +181,3 @@ as a prewritten function in the alternative code manager class
   import stackless
   stackless.tasklet(ManageFileChanges)(cm)
 }}}
-
