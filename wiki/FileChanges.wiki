@@ -79,8 +79,6 @@ manager, you do not need to tell it to do the file change detection internally a
 {{{
   import reloader
   cr = reloader.CodeReloader()
-  import livecoding
-  cm = livecoding.CodeManager()
 }}}
 
 *Warning:* As mentioned in the last example it is unsafe to put in place
