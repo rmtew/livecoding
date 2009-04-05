@@ -1,4 +1,6 @@
+#summary Hooking up automatic code reloading.
 #labels Featured
+
 The file change library included with this code reloading framework is what makes it truly useful.  It would be cumbersome to have to explicitly execute a statement to trigger the reloading of a script file managed by this framework every time it changed.  And automatic detection of changes hooked up to automatic reloading of the script files, is a huge boost to productivity.
 
 By default a {{{CodeReloader}}} instance will enable this automatic process.  But in the event that you have your own way of notifying the framework of changed script files, you can disable this functionality and provide your own file change notification events.
