@@ -25,7 +25,7 @@ class CodeReloader:
     internalFileMonitor = None
     scriptDirectoryClass = ReloadableScriptDirectory
 
-    def __init__(self, mode=MODE_OVERWRITE, monitorFileChanges=False, fileChangeCheckDelay=None):
+    def __init__(self, mode=MODE_OVERWRITE, monitorFileChanges=True, fileChangeCheckDelay=None):
         self.mode = mode
         self.monitorFileChanges = monitorFileChanges
 

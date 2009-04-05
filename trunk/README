@@ -22,6 +22,14 @@ The way the library goes about this is by having directories containing Python s
 
 Note that these directories should not be those of standard Python modules available for normal import.  The reason for this is that this library manually processes the contents of registered directories and places them so that they can be imported.  By handling this itself, this allows the library to know enough to apply changes to modules as they happen.
 
+== Library Directories ==
+
+ * examples: Example code to illustrate use of this library.
+ * filechanges: A library that manages the process of monitoring script files and notifying registrants about modifications to them.
+ * scripts: A script directory for use by the unit tests.
+ * scripts2: Additional scripts for use by the unit tests.
+ * tests: Unit tests for this library.
+
 == Design Decisions ==
 
 There are several noteworthy design decisions which were made during the implementation of this library:
