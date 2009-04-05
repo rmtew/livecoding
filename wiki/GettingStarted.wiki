@@ -7,7 +7,8 @@ Knowing of the custom importing framework that this library provides, a user wil
 
 The following page cover the described aspects of usage:
 
- Importing: How the directory hierarchy maps to namespace entry placement.
+ [Importing Importing]: How the directory hierarchy maps to namespace entry placement.
+
  FileChanges: Automatic code reloading.
 
 === Details ===
