@@ -1,4 +1,6 @@
+#summary How directory structure maps to import hierarchy.
 #labels Featured
+
 In order to bring Python scripts under the management of the custom module system this library provides, a `CodeReloader` object needs to be created, and the top level directories the scripts are within registered with it.
 
 The following examples illustrates how this is done for a selection of different use cases.
