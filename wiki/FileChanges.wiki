@@ -32,7 +32,7 @@ You have registered the contents of the 'stuff' directory under the base
 namespace 'server' in this manner:
 
 {{{
-  import reloader
+  from livecoding import reloader
   cr = reloader.CodeReloader(monitorFileChanges=False)
   cr.AddDirectory("server", "stuff")
 }}}
@@ -77,7 +77,7 @@ The only difference from the first example is that when you instance the code
 manager, you do not need to tell it to do the file change detection internally as this is the default behaviour.
 
 {{{
-  import reloader
+  from livecoding import reloader
   cr = reloader.CodeReloader()
 }}}
 
@@ -173,7 +173,7 @@ as a prewritten function in the alternative code manager class
           cr.DispatchPendingFileChanges()
           stackless.sleep(1.0)
 
-  import reloader
+  from livecoding import reloader
   cr = reloader.StacklessCodeReloader(monitorFileChanges=False)
 
   import stackless
