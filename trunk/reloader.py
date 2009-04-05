@@ -319,6 +319,17 @@ class CodeReloader:
         return True
 
 
+class StacklessCodeReloader(CodeReloader):
+    def GetChangeHandler(self, cb, *args, **kwargs):
+        kwargs["useThreads"] = False
+
+        import filechanges
+        return filechanges.ChangeHandler(cb, *args, **kwargs)
+
+    def DispatchPendingFileChanges(self):
+        self.internalFileMonitor.ProcessFileEvents()
+
+
 def RebindFunction(function, globals_):
     newFunction = types.FunctionType(function.func_code, globals_, function.func_name, function.func_defaults)
     newFunction.__doc__= function.__doc__
