@@ -336,3 +336,20 @@ def RebindFunction(function, globals_):
     newFunction.__dict__.update(function.__dict__)
     return newFunction
 
+
+# Upgrade Python versions less than 2.5...
+if not hasattr(os.path, "relpath"):
+    # If this is being run on earlier versions of Python than 2.6, monkeypatch 
+    # in something resembling missing standard library functionality.
+    if sys.version_info[0] == 2 and sys.version_info[1] < 6:
+        def relpath(longPath, basePath):
+            if not longPath.startswith(basePath):
+                raise RuntimeError("Unexpected arguments")
+            if longPath == basePath:
+                return "."
+            i = len(basePath)
+            if not basePath.endswith(os.path.sep):
+                i += len(os.path.sep)
+            return longPath[i:]
+
+        os.path.relpath = relpath

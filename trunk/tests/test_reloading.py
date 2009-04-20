@@ -448,9 +448,9 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         self.failUnless(ret1 != ret2, "Function arguments somehow not updated")
 
         ret = inspect.getargspec(oldStyleBaseClass.Func_Arguments2.im_func)
-        self.failUnless(ret.defaults == (True,), "Function argument default value not updated")
+        self.failUnless(ret[3] == (True,), "Function argument default value not updated")
         ret = inspect.getargspec(newStyleBaseClass.Func_Arguments2.im_func)
-        self.failUnless(ret.defaults == (True,), "Function argument default value not updated")
+        self.failUnless(ret[3] == (True,), "Function argument default value not updated")
 
         # Note: Actually, all this cack is updated just by the function having been replaced in-situ.
 
@@ -968,20 +968,5 @@ def GetScriptDirectory():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
-
-    # If this is being run on earlier versions of Python than 2.6, monkeypatch 
-    # in something resembling missing standard library functionality.
-    if sys.version_info[0] == 2 and sys.version_info[1] < 6:
-        def relpath(longPath, basePath):
-            if not longPath.startswith(basePath):
-                raise RuntimeError("Unexpected arguments")
-            if longPath == basePath:
-                return "."
-            i = len(basePath)
-            if not basePath.endswith(os.path.sep):
-                i += len(os.path.sep)
-            return longPath[i:]
-
-        os.path.relpath = relpath
 
     unittest.main()
