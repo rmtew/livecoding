@@ -601,6 +601,28 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
 
         setattr(module, attributeName, replacementValue)
 
+    def WaitForScriptFileChange(self, cr, scriptDirectory, scriptPath, maxDelay=10.0):
+        oldScriptFile = scriptDirectory.FindScript(scriptPath)
+
+        startTime = time.time()
+        delta = time.time() - startTime
+        while delta < maxDelay:
+            ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=maxDelay-delta)
+            if ret is None:
+                return None
+
+            delta = time.time() - startTime
+
+            newScriptFile = scriptDirectory.FindScript(scriptPath)
+            if newScriptFile is None:
+                continue
+
+            if oldScriptFile is None and newScriptFile is not None:
+                return delta
+
+            if oldScriptFile.version < newScriptFile.version:
+                return delta
+
     def testDirectoryRegistration(self):
         """
         Verify that this function returns a registered handler for a parent
@@ -756,14 +778,14 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
 
         # Wait for the monitoring to kick in.
         ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
-        self.failUnless(ret is not None, "File monitoring not detected in a timely fashion")
+        self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
         open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
         self.failUnless(os.path.exists(scriptFilePath), "Failed to create the scratch file")
 
         # Wait for the file creation to be detected.
-        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
-        self.failUnless(ret is not None, "File change not detected in a timely fashion")
+        ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath)
+        self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
         import game
         self.failUnless(game.FileChangeFunction.__doc__ == " old version ", "Expected function doc string value not present")
@@ -772,20 +794,15 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         sourceScriptFilePath = os.path.join(script2DirPath, "fileChange_After.py")
         self.failUnless(os.path.exists(sourceScriptFilePath), "Failed to locate '%s' script" % sourceScriptFilePath)
 
-        # Wait for the monitoring to kick in.
-        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
-        self.failUnless(ret is not None, "File change not detected in a timely fashion")
-
-        lastWatchState = copy.deepcopy(cr.internalFileMonitor.watchState)
-
         # Change the monitored script.
         open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
         
         # Wait for the next file change to be detected.
-        ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
-        self.failUnless(ret is not None, "File change not detected in a timely fashion")
+        ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath)
+        self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
-        self.failUnless(game.FileChangeFunction.__doc__ == " new version ", "Updated function doc string value still the original one")
+        newDocString = game.FileChangeFunction.__doc__
+        self.failUnless(newDocString == " new version ", "Updated function doc string value '"+ newDocString +"'")
 
     def testScriptUnitTesting(self):
         scriptDirPath = GetScriptDirectory()
