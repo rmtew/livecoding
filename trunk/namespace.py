@@ -34,7 +34,7 @@ class ScriptFile(object):
     def Load(self, filePath):
         self.filePath = filePath
 
-        script = open(self.filePath, 'r').read()
+        script = open(self.filePath, 'rU').read()
         self.codeObject = compile(script, self.filePath, "exec")
 
     def GetAttributeValue(self, attributeName):
