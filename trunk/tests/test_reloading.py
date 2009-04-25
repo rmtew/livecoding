@@ -1,6 +1,7 @@
 import unittest
-import os, sys, time, logging
+import os, sys, time, math
 import inspect, copy
+import logging
 
 if __name__ == "__main__":
     currentPath = sys.path[0]
@@ -601,13 +602,11 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
 
         setattr(module, attributeName, replacementValue)
 
-    def WaitForScriptFileChange(self, cr, scriptDirectory, scriptPath, maxDelay=10.0):
-        oldScriptFile = scriptDirectory.FindScript(scriptPath)
-
+    def WaitForScriptFileChange(self, cr, scriptDirectory, scriptPath, oldScriptFile, maxDelay=10.0):
         startTime = time.time()
         delta = time.time() - startTime
         while delta < maxDelay:
-            ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=maxDelay-delta)
+            ret = cr.internalFileMonitor.WaitForNextMonitoringCheck()
             if ret is None:
                 return None
 
@@ -764,6 +763,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         scriptDirPath = GetScriptDirectory()
         scriptFilePath = os.path.join(scriptDirPath, "fileChange.py")
         script2DirPath = scriptDirPath +"2"
+        
+        self.failUnless(not os.path.exists(scriptFilePath), "Found script when it should have been deleted")
 
         # Start up the code reloader.
         # Lower the file change check frequency, to prevent unnecessary unit test stalling.
@@ -780,11 +781,19 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         ret = cr.internalFileMonitor.WaitForNextMonitoringCheck(maxDelay=10.0)
         self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
+        oldScriptFile = scriptDirectory.FindScript(scriptFilePath)
+        self.failUnless(oldScriptFile is None, "Found the script file before it was created")
+
         open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
         self.failUnless(os.path.exists(scriptFilePath), "Failed to create the scratch file")
 
+        # Need to wait for the next second.  mtime is only accurate to the nearest second on *nix.
+        mtime = os.stat(scriptFilePath).st_mtime
+        while mtime == math.floor(time.time()):
+            pass
+
         # Wait for the file creation to be detected.
-        ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath)
+        ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath, oldScriptFile)
         self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
         import game
@@ -794,11 +803,14 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         sourceScriptFilePath = os.path.join(script2DirPath, "fileChange_After.py")
         self.failUnless(os.path.exists(sourceScriptFilePath), "Failed to locate '%s' script" % sourceScriptFilePath)
 
+        oldScriptFile = scriptDirectory.FindScript(scriptFilePath)
+        self.failUnless(oldScriptFile is not None, "Did not find a loaded script file")
+
         # Change the monitored script.
         open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
         
         # Wait for the next file change to be detected.
-        ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath)
+        ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath, oldScriptFile)
         self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
         newDocString = game.FileChangeFunction.__doc__

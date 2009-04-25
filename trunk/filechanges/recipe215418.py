@@ -66,6 +66,7 @@ def Check(handler, skipEvents=False):
                 # Record this file as having been seen
                 del remaining_files[path]
                 # File's mtime has been changed since we last looked at it.
+                # NOTE: mtime is to the nearest second..
                 if not skipEvents and t.st_mtime > mtime:
                     handler.DispatchFileChange(path, changed=True)
             elif not skipEvents:

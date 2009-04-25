@@ -11,7 +11,6 @@
 import os, sys, time, traceback, weakref
 import threading, Queue
 
-
 class ChangeHandler:
     def __init__(self, callback, delay=None, useThread=True):
         self.callback = callback
@@ -113,25 +112,21 @@ class ChangeThread(threading.Thread):
         self.start()
 
     def run(self):
-        try:
-            self._run()
-        except ReferenceError:
-            pass
-
-    def _run(self):
         module = GetFileChangeModule()
         module.Prepare(self.handler)
         time.sleep(self.handler.delay)
 
         while True:
             self.lock.acquire()
-            if self.resetEvent.isSet():
-                self.resetEvent.clear()
-                module.Prepare(self.handler)
-            else:
-                module.Check(self.handler)
-            self.lastCheckTimestamp = time.time()
-            self.lock.release()
+            try:
+                if self.resetEvent.isSet():
+                    self.resetEvent.clear()
+                    module.Prepare(self.handler)
+                else:
+                    module.Check(self.handler)
+                self.lastCheckTimestamp = time.time()
+            finally:
+                self.lock.release()
 
             time.sleep(self.handler.delay)
 
