@@ -574,7 +574,32 @@ class CodeReloadingObstacleTests(CodeReloadingTestCase):
         
         ret = game.TestFunction_KeywordArguments(testarg1="testarg1")
         self.failUnless(ret[0] == "newarg1" and ret[1] == {"testarg1":"testarg1"}, "Updated function failed after reload")
+
+    def testUpdateSameFileReload_ImportAddition(self):
+        """
+        This test is intended to verify that when a changed file adds an import
+        statement, the imported object is present when it is reloaded.
+        """
+        ## PREPARATION:
+
+        scriptDirPath = GetScriptDirectory()
+        cr = self.codeReloader = reloader.CodeReloader(mode=reloader.MODE_UPDATE)
+        cr.scriptDirectoryClass = ReloadableScriptDirectoryNoUnitTesting
+        scriptDirectory = cr.AddDirectory("game", scriptDirPath)
+        self.failUnless(scriptDirectory is not None, "Script loading failure")
+
+        import game
+        oldFunction = game.ImportTestClass.TestFunction.im_func
+        self.failUnless("logging" not in oldFunction.func_globals, "Global entry unexpectedly already present")
         
+        cb = MakeMangleFilenameCallback("import_Update.py")
+        newScriptFile = self.ReloadScriptFile(scriptDirectory, scriptDirPath, "import.py", mangleCallback=cb)
+
+        ## ACTUAL TESTS:
+
+        newFunction = game.ImportTestClass.TestFunction.im_func
+        self.failUnless("logging" in newFunction.func_globals, "Global entry unexpectedly already present")
+
 
 class CodeReloaderSupportTests(CodeReloadingTestCase):
     mockedNamespaces = None
@@ -670,6 +695,28 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         self.failUnless(cr.FindDirectory("unregistered path") is None, "Got a script directory handler for an unregistered path")
 
     def testAttributeLeaking(self):
+        """
+        This test is intended to exercise the leaked attribute tracking.
+
+        First, a script is loaded exporting a class in a namespace.  Next the
+        script is copied and the class is removed from it.  The modified copy
+        is then reloaded in place of the original.  It is verified that:
+        
+        - The removed class is now present in the leaked attribute tracking.
+        - The given leaked attribute is associated with the previous version
+          of the script.
+        - The class is still present in the namespace and is actually leaked.
+        
+        Lastly, a final copy of the script is made, with the class back in
+        place.  This is then reloaded in place of the first copy.  It is
+        verified that:
+        
+        - The namespace entry is no longer a leaked attribute.
+        - The class in the namespace is not the original version.
+        """
+    
+        ## PREPARATION:
+    
         # The name of the attribute we are going to leak as part of this test.
         leakName = "NewStyleSubclassViaClassReference"
     
@@ -701,6 +748,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Replace the old script with the new version.
         cr.UseNewScript(oldScriptFile, newScriptFile1)
 
+        ## ACTUAL TESTS:
+
         self.failUnless(cr.IsAttributeLeaked(leakName), "Attribute not in leakage registry")
 
         # Ensure that the leakage is recorded as coming from the original script.
@@ -710,6 +759,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Ensure that the leakage is left in the module.
         self.failUnless(hasattr(namespace, leakName), "Leaked attribute no longer present")
         self.failUnless(getattr(namespace, leakName) is leakingValue, "Leaked value differs from original value")
+
+        ## PREPARATION:
 
         #  - Attribute was already leaked, and reload comes with no replacement.
         #    - New script file has leak entry propagated from old script file.
@@ -724,6 +775,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Replace the old script with the new version.
         cr.UseNewScript(newScriptFile1, newScriptFile2)
 
+        ## ACTUAL TESTS:
+
         self.failUnless(cr.IsAttributeLeaked(leakName), "Attribute not in leakage registry")
 
         # Ensure that the leakage is recorded as coming from the original script.
@@ -733,10 +786,17 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Ensure that the leakage is left in the module.
         self.failUnless(hasattr(namespace, leakName), "Leaked attribute no longer present")
         self.failUnless(getattr(namespace, leakName) is leakingValue, "Leaked value differs from original value")
+        
+        ## PREPARATION:
 
         #  - Attribute was already leaked, and reload comes with an invalid replacement.
         #    - Reload is rejected.
+
+        ## ACTUAL TESTS:
+
         logging.warn("TODO, implement leakage compatibility case")
+
+        ## PREPARATION:
 
         #  - Attribute was already leaked, and reload comes with a valid replacement.
         #    - New script file lacks leak entry for attribute.
@@ -750,6 +810,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         
         newValue = newScriptFile3.scriptGlobals[leakName]
 
+        ## ACTUAL TESTS:
+
         self.failUnless(not cr.IsAttributeLeaked(leakName), "Attribute still in leakage registry")
 
         # Ensure that the leakage is left in the module.
@@ -760,6 +822,12 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Conclusion: Attribute leaking happens and is rectified.
 
     def testFileChangeDetection(self):
+        """
+        This test is intended to verify that file changes are detected and a reload takes place.
+        """
+    
+        ## PREPARATION:
+
         scriptDirPath = GetScriptDirectory()
         scriptFilePath = os.path.join(scriptDirPath, "fileChange.py")
         script2DirPath = scriptDirPath +"2"
@@ -806,6 +874,8 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         oldScriptFile = scriptDirectory.FindScript(scriptFilePath)
         self.failUnless(oldScriptFile is not None, "Did not find a loaded script file")
 
+        ## BEHAVIOUR TO BE TESTED:
+
         # Change the monitored script.
         open(scriptFilePath, "w").write(open(sourceScriptFilePath, "r").read())
         
@@ -813,10 +883,22 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         ret = self.WaitForScriptFileChange(cr, scriptDirectory, scriptFilePath, oldScriptFile)
         self.failUnless(ret is not None, "File change not detected in a timely fashion (%s)" % ret)
 
+        ## ACTUAL TESTS:
+
         newDocString = game.FileChangeFunction.__doc__
         self.failUnless(newDocString == " new version ", "Updated function doc string value '"+ newDocString +"'")
 
     def testScriptUnitTesting(self):
+        """
+        This test is intended to verify that local unit test failure equals code loading failure.
+        
+        First, the act of adding a directory containing a failing '*_unittest.py' file is
+        tested.  The operation fails.  Next, the act of adding the same directory without
+        the unit test failing is tested.  This now succeeds.
+        """
+
+        ## PREPARATION:
+
         scriptDirPath = GetScriptDirectory()
         self.codeReloader = reloader.CodeReloader()
 
@@ -859,12 +941,16 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Make sure we remove this, otherwise the logging will leak..
         logger.addFilter(loggingFilter)
 
+        ## BEHAVIOUR TO BE TESTED: Forced unit test and therefore operation failure.
+
         __builtins__.unitTestFailure = True
         try:
             scriptDirectory = self.codeReloader.AddDirectory("game", scriptDirPath)
         finally:
             logger.removeFilter(loggingFilter)
             del __builtins__.unitTestFailure
+
+        ## ACTUAL TESTS:
 
         self.failUnless(scriptDirectory is None, "Unit tests unexpectedly passed")
 
@@ -875,11 +961,15 @@ class CodeReloaderSupportTests(CodeReloadingTestCase):
         # Fail unless the filtered logging met expectations.
         self.failUnless(loggingFilter.lineCount == 0, "Filtered too many lines to cover the unit test failure")
 
+        ## BEHAVIOUR TO BE TESTED: Unit test passing and successful operation.
+
         __builtins__.unitTestFailure = False
         try:
             scriptDirectory = self.codeReloader.AddDirectory("game", scriptDirPath)
         finally:
             del __builtins__.unitTestFailure
+
+        ## ACTUAL TESTS:
 
         self.failUnless(scriptDirectory is not None, "Unit tests unexpectedly failed")
 
