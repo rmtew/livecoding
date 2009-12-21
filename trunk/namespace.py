@@ -119,18 +119,28 @@ class ScriptFile(object):
             self.lastError = None
 
     def GetExportableAttributes(self):
+        import __builtin__, types
+        # No point handing around standard global objects.
+        # Is this line in particular needed?
+        builtinValues = set(__builtin__.__dict__.itervalues())
+        # Some objects in types are special __builtin__ sourced ones.
+        builtinValues.update(v for k, v in types.__dict__.iteritems() if k[0] != '_')
+
         for k, v in self.scriptGlobals.iteritems():
             if k == "__builtins__":
                 continue
 
             valueType = type(v)
             # Modules will have been imported from elsewhere.
-            if valueType is types.ModuleType:
+            if isinstance(v, types.ModuleType):
                 continue
 
             if valueType in (types.ClassType, types.TypeType):
                 # Classes with valid modules will have been imported from elsewhere.
                 if v.__module__ != "__builtin__":
+                    continue
+                # Skip actual builtin objects.
+                if v in builtinValues:
                     continue
 
             yield k, v, valueType
@@ -259,8 +269,10 @@ class ScriptDirectory(object):
             baseNamespaceName, moduleName = None, parts[0]
             baseNamespace = None
 
-        module = imp.new_module(moduleName)
-        module.__name__ = moduleName
+        logging.debug("CreateNamespace %s")
+
+        module = imp.new_module(namespaceName)
+        # module.__name__ = moduleName
         # Our modules don't map to files.  Have a placeholder.
         module.__file__ = ""
         module.__package__ = baseNamespaceName
@@ -328,7 +340,7 @@ class ScriptDirectory(object):
                 logging.debug("RunScript tests failed or errored")
                 return False
 
-        logging.debug("RunScript exporting")
+        logging.debug("RunScript exporting to namespace %s", scriptFile.namespacePath)
 
         namespace = self.CreateNamespace(scriptFile.namespacePath, scriptFile.filePath)
         self.SetModuleAttributes(scriptFile, namespace)
@@ -354,7 +366,7 @@ class ScriptDirectory(object):
         for k, v, valueType in scriptFile.GetExportableAttributes():
             # By default we never overwrite.  This way we can identify duplicate contributions.
             if hasattr(namespace, k) and k not in overwritableAttributes:
-                logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)
+                logging.error("Duplicate namespace contribution for '%s.%s' from '%s', our class = %s", moduleName, k, scriptFile.filePath, v.__file__ == scriptFile.filePath)                
                 continue
 
             logging.debug("InsertModuleAttribute %s.%s", moduleName, k)
