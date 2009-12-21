@@ -269,7 +269,7 @@ class ScriptDirectory(object):
             baseNamespaceName, moduleName = None, parts[0]
             baseNamespace = None
 
-        logging.debug("CreateNamespace %s")
+        logging.debug("CreateNamespace %s", namespaceName)
 
         module = imp.new_module(namespaceName)
         # module.__name__ = moduleName
