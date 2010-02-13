@@ -79,7 +79,7 @@ class CodeReloader:
     # Directory registration support.
 
     def AddDirectory(self, baseNamespace, baseDirPath):
-        handler = self.scriptDirectoryClass(baseDirPath, baseNamespace)
+        handler = self.scriptDirectoryClass(baseDirPath, baseNamespace, delScriptGlobals=(self.mode == MODE_UPDATE))
         if self.classCreationCallback:
             handler.SetClassCreationCallback(self.classCreationCallback)
 
