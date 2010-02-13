@@ -266,6 +266,7 @@ class CodeReloader:
 
                 # If there was an old value, it is updated.
                 if oldValue is not None:
+                    contributedAttributes.add(attrName)
                     continue
 
                 # Otherwise, the new value is being added.
